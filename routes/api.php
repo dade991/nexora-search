@@ -83,6 +83,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/search', [App\Http\Controllers\Api\V1\AIController::class, 'search']);
         Route::post('/recommendations', [App\Http\Controllers\Api\V1\AIController::class, 'recommendations']);
         Route::post('/chat', [App\Http\Controllers\Api\V1\AIController::class, 'chat']);
+        Route::post('/summary', [App\Http\Controllers\Api\V1\AIController::class, 'summary']);
+        Route::post('/vision', [App\Http\Controllers\Api\V1\AIController::class, 'vision']);
     });
 
     // External API Routes (for proxying/normalizing)
@@ -107,5 +109,12 @@ Route::prefix('v1')->group(function () {
             Route::get('/instagram/{id}', [App\Http\Controllers\Api\V1\External\SocialController::class, 'instagram']);
             Route::get('/twitter/{id}', [App\Http\Controllers\Api\V1\External\SocialController::class, 'twitter']);
         });
+    });
+
+    // Admin & Observability Routes
+    Route::prefix('admin')->group(function () {
+        Route::get('/metrics', [App\Http\Controllers\Api\V1\AdminController::class, 'metrics']);
+        Route::get('/logs', [App\Http\Controllers\Api\V1\AdminController::class, 'logs']);
+        Route::delete('/logs', [App\Http\Controllers\Api\V1\AdminController::class, 'clearLogs']);
     });
 });

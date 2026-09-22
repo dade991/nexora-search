@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Models\Favorite;
+use App\Models\SavedPlace;
 use App\Models\Location;
 
 class FavoriteController extends Controller
@@ -14,7 +14,7 @@ class FavoriteController extends Controller
      */
     public function index(Request $request)
     {
-        $favorites = $request->user()->favorites()
+        $favorites = SavedPlace::where('user_id', $request->user()->id)
             ->with('location')
             ->latest()
             ->paginate(20);
@@ -35,28 +35,39 @@ class FavoriteController extends Controller
         ]);
 
         // Check if already favorited
-        $existing = $request->user()->favorites()
+        $existing = SavedPlace::where('user_id', $request->user()->id)
             ->where('location_id', $request->input('location_id'))
             ->first();
 
         if ($existing) {
             return response()->json([
                 'message' => 'Location is already in favorites',
-                'favorite' => $existing,
+                'favorite' => $existing->load('location'),
             ], 409);
         }
 
-        $favorite = $request->user()->favorites()->create($request->all());
+        $favorite = SavedPlace::create([
+            'user_id' => $request->user()->id,
+            'location_id' => $request->input('location_id'),
+            'notes' => $request->input('notes'),
+            'tags' => $request->input('tags'),
+        ]);
 
-        return response()->json($favorite, 201);
+        return response()->json($favorite->load('location'), 201);
     }
 
     /**
      * Remove a favorite location.
      */
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
-        $favorite = $request->user()->favorites()->findOrFail($id);
+        $favorite = SavedPlace::where('user_id', $request->user()->id)
+            ->where(function ($q) use ($id) {
+                $q->where('id', $id)
+                  ->orWhere('location_id', $id);
+            })
+            ->firstOrFail();
+
         $favorite->delete();
 
         return response()->json([
