@@ -31,6 +31,17 @@ const coordinatesFor = (place?: LocationItem | null): Coordinates | null => {
         : null;
 };
 
+const popupContent = (title: string, detail: string): HTMLDivElement => {
+    const container = document.createElement('div');
+    const heading = document.createElement('strong');
+    const description = document.createElement('span');
+    container.className = 'nexora-google-popup';
+    heading.textContent = title;
+    description.textContent = detail;
+    container.append(heading, description);
+    return container;
+};
+
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     places,
     selectedPlace,
@@ -157,7 +168,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 marker.addListener('click', () => {
                     onSelectPlace(place);
                     infoWindow.current?.setContent(
-                        `<div class="nexora-google-popup"><strong>${place.name}</strong><span>${place.category ?? 'Place'}</span></div>`,
+                        popupContent(place.name, place.category ?? 'Place'),
                     );
                     infoWindow.current?.open({ map: map.current, anchor: marker });
                 });
@@ -356,7 +367,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 });
                 marker.addListener('click', () => {
                     infoWindow.current?.setContent(
-                        `<div class="nexora-google-popup"><strong>${airport.name}</strong><span>${airport.address}</span></div>`,
+                        popupContent(airport.name, airport.address),
                     );
                     infoWindow.current?.open({ map: map.current, anchor: marker });
                 });

@@ -210,11 +210,11 @@ test('temporarily skips providers after connection failures', function () {
     ]);
 
     $this->getJson('/api/v1/search?query=first-unavailable')->assertOk();
-    Http::assertSentCount(1);
+    Http::assertSentCount(2);
 
     $this->getJson('/api/v1/search?query=second-unavailable')->assertOk()
         ->assertJsonPath('provider', 'unavailable');
-    Http::assertSentCount(1);
+    Http::assertSentCount(2);
 });
 
 test('returns a friendly degraded response when all place providers are unavailable', function () {
@@ -233,14 +233,22 @@ test('returns a friendly degraded response when all place providers are unavaila
         ->assertDontSee('cURL');
 });
 
-test('returns immediately after a transient SearchApi server failure', function () {
+test('recovers from a transient SearchApi server failure', function () {
     config()->set('services.searchapi.key', 'test-key');
     $attempts = 0;
     Http::fake(function ($request) use (&$attempts) {
         if (str_contains($request->url(), 'searchapi.io')) {
             $attempts++;
 
-            return Http::response(['error' => 'busy'], 503);
+            return $attempts === 1
+                ? Http::response(['error' => 'busy'], 503)
+                : Http::response(['local_results' => [[
+                    'place_id' => 'recovered-cafe',
+                    'title' => 'Recovered Cafe',
+                    'address' => 'Lagos',
+                    'type' => 'Coffee shop',
+                    'gps_coordinates' => ['latitude' => 6.5244, 'longitude' => 3.3792],
+                ]]]);
         }
 
         return Http::response([]);
@@ -249,8 +257,8 @@ test('returns immediately after a transient SearchApi server failure', function 
     $response = $this->getJson('/api/v1/search?query=retry-cafe');
 
     $response->assertOk()
-        ->assertJsonPath('status', 'degraded')
-        ->assertJsonPath('provider', 'unavailable')
-        ->assertJsonPath('results', []);
-    expect($attempts)->toBe(1);
+        ->assertJsonPath('status', 'live')
+        ->assertJsonPath('provider', 'searchapi_google_maps')
+        ->assertJsonPath('results.0.name', 'Recovered Cafe');
+    expect($attempts)->toBe(2);
 });

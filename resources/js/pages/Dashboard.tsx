@@ -66,7 +66,15 @@ export default function Dashboard({
     const [searchCoordinates, setSearchCoordinates] = useState<{
         latitude: number;
         longitude: number;
-    } | null>(null);
+    } | null>(() => {
+        const storedUser = getStoredUser();
+        const latitude = Number(storedUser?.latitude);
+        const longitude = Number(storedUser?.longitude);
+
+        return Number.isFinite(latitude) && Number.isFinite(longitude)
+            ? { latitude, longitude }
+            : null;
+    });
     const searchSequence = useRef(0);
     const initialSearchStarted = useRef(false);
     const savingPlaces = useRef(new Set<string | number>());
@@ -223,11 +231,15 @@ export default function Dashboard({
                     );
                 const position = await new Promise<GeolocationPosition>(
                     (resolve, reject) =>
-                        navigator.geolocation.getCurrentPosition(
-                            resolve,
-                            reject,
-                            { timeout: 10000, maximumAge: 60000 },
-                        ),
+                        navigator.geolocation.getCurrentPosition(resolve, (error) => {
+                            const message =
+                                error.code === error.PERMISSION_DENIED
+                                    ? 'Allow location access to search nearby, or choose Global search.'
+                                    : error.code === error.TIMEOUT
+                                      ? 'Getting your location took too long. Try again or choose Global search.'
+                                      : 'Your location could not be determined. Try again or choose Global search.';
+                            reject(new Error(message));
+                        }, { timeout: 15000, maximumAge: 60000 }),
                 );
                 center = {
                     latitude: position.coords.latitude,

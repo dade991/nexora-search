@@ -15,6 +15,8 @@ export default defineConfig({
             fonts: [
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
+                    preload: false,
+                    optimizedFallbacks: false,
                 }),
             ],
         }),

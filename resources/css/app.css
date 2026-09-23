@@ -223,27 +223,6 @@ body {
     ) !important;
 }
 
-.nexora-map-chrome,
-.maplibregl-ctrl-group {
-    background: color-mix(
-        in srgb,
-        var(--nx-map-surface) 92%,
-        transparent
-    ) !important;
-    color: var(--nx-map-text) !important;
-    border-color: color-mix(
-        in srgb,
-        var(--nx-map-text) 18%,
-        transparent
-    ) !important;
-}
-
-.nexora-map-chrome button,
-.nexora-map-chrome select,
-.maplibregl-ctrl button {
-    color: var(--nx-map-text) !important;
-}
-
 :root[data-theme='maps-light'] body,
 :root[data-theme='maps-dark'] body {
     font-family: Arial, 'Helvetica Neue', sans-serif;
@@ -265,28 +244,6 @@ body {
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-.nexora-map-marker {
-    width: 18px;
-    height: 18px;
-    border: 3px solid var(--nx-map-text);
-    border-radius: 999px 999px 999px 0;
-    background: var(--nx-brand);
-    box-shadow: 0 4px 12px rgb(16 32 30 / 35%);
-    cursor: pointer;
-    transform: rotate(-45deg);
-    transition:
-        transform 160ms ease,
-        background-color 160ms ease;
-}
-
-.nexora-map-marker:hover,
-.nexora-map-marker:focus-visible {
-    background: var(--nx-warning);
-    outline: 2px solid var(--nx-accent);
-    outline-offset: 3px;
-    transform: rotate(-45deg) scale(1.16);
 }
 
 @media (prefers-reduced-motion: reduce) {

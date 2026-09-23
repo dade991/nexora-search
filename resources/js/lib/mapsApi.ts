@@ -41,7 +41,7 @@ export function loadGoogleMaps(): Promise<any> {
 
     if (!apiKey) {
         return Promise.reject(
-            new Error('Add your Google Maps key to VITE_GOOGLE_MAPS_API_KEY.'),
+            new Error('The map is unavailable right now.'),
         );
     }
 

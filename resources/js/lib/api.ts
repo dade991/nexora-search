@@ -70,9 +70,7 @@ async function fetchClient<T>(
             ['AbortError', 'TimeoutError'].includes(error.name)
         ) {
             throw new Error(
-                endpoint.includes('/search')
-                    ? 'Search is taking too long. Your previous results are still available; please try again shortly.'
-                    : 'Nexora is taking too long to respond. Please try again shortly.',
+                'Nexora could not complete that request. Please try again.',
             );
         }
 
