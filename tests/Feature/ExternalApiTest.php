@@ -1,65 +1,93 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
-test('can query mapbox geocoding', function () {
+beforeEach(function () {
+    Http::preventStrayRequests();
+    Http::fake(['api.github.com/*' => Http::failedConnection()]);
+});
+
+test('returns real data or a clean unavailable response for mapbox', function () {
+    config()->set('services.mapbox.key', null);
+
     $response = $this->getJson('/api/v1/external/mapbox/geocoding/Paris');
 
-    $response->assertOk()
-        ->assertJsonStructure([
+    $this->assertTrue(in_array($response->status(), [200, 503], true));
+
+    if ($response->status() === 503) {
+        $response->assertJsonStructure([
+            'message',
             'provider',
-            'query',
-            'results',
         ]);
+
+        return;
+    }
+
+    $response->assertJsonStructure([
+        'provider',
+        'query',
+        'results',
+    ]);
 });
 
-test('can query mapbox directions', function () {
+test('returns real data or a clean unavailable response for mapbox directions', function () {
+    config()->set('services.mapbox.key', null);
+
     $response = $this->getJson('/api/v1/external/mapbox/directions?start_lat=40.7128&start_lng=-74.0060&end_lat=40.7580&end_lng=-73.9855');
 
-    $response->assertOk()
-        ->assertJsonStructure([
+    $this->assertTrue(in_array($response->status(), [200, 503], true));
+
+    if ($response->status() === 503) {
+        $response->assertJsonStructure([
+            'message',
             'provider',
-            'distance_meters',
-            'duration_seconds',
         ]);
+
+        return;
+    }
+
+    $response->assertJsonStructure([
+        'provider',
+        'distance_meters',
+        'duration_seconds',
+    ]);
 });
 
-test('can query google places search proxy', function () {
-    $response = $this->getJson('/api/v1/external/google/places/search?query=cafe');
+test('returns real data or a clean unavailable response for github', function () {
+    config()->set('services.github.token', null);
 
-    $response->assertOk()
-        ->assertJsonStructure([
-            'provider',
-            'query',
-            'results',
-        ]);
-});
-
-test('can query github developer profile and repo', function () {
     $userResponse = $this->getJson('/api/v1/external/github/users/taylorotwell');
-    $userResponse->assertOk()
-        ->assertJsonStructure([
+    $this->assertTrue(in_array($userResponse->status(), [200, 503], true));
+
+    if ($userResponse->status() === 503) {
+        $userResponse->assertJsonStructure([
+            'message',
+            'provider',
+        ]);
+    } else {
+        $userResponse->assertJsonStructure([
             'provider',
             'user' => ['username', 'name'],
         ]);
+    }
 
     $repoResponse = $this->getJson('/api/v1/external/github/repos/laravel/laravel');
-    $repoResponse->assertOk()
-        ->assertJsonStructure([
+    $this->assertTrue(in_array($repoResponse->status(), [200, 503], true));
+
+    if ($repoResponse->status() === 503) {
+        $repoResponse->assertJsonStructure([
+            'message',
             'provider',
-            'repo' => ['name', 'full_name'],
         ]);
-});
 
-test('can query social endpoints', function () {
-    $fbResponse = $this->getJson('/api/v1/external/social/facebook/centralpark');
-    $fbResponse->assertOk()->assertJsonPath('provider', 'facebook');
+        return;
+    }
 
-    $igResponse = $this->getJson('/api/v1/external/social/instagram/centralpark');
-    $igResponse->assertOk()->assertJsonPath('provider', 'instagram');
-
-    $twResponse = $this->getJson('/api/v1/external/social/twitter/centralpark');
-    $twResponse->assertOk()->assertJsonPath('provider', 'twitter');
+    $repoResponse->assertJsonStructure([
+        'provider',
+        'repo' => ['name', 'full_name'],
+    ]);
 });

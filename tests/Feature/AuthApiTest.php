@@ -80,3 +80,92 @@ test('authenticated user can view their profile and logout', function () {
             'message' => 'Successfully logged out',
         ]);
 });
+
+test('authenticated user can save onboarding preferences and location', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user, 'sanctum')->patchJson('/api/v1/auth/profile', [
+        'occupation' => 'Designer',
+        'age' => 28,
+        'gender' => 'Prefer not to say',
+        'location' => 'Lagos',
+        'latitude' => 6.5244,
+        'longitude' => 3.3792,
+        'preferences' => [
+            'likes' => ['Food and coffee', 'Arts and culture'],
+            'onboarding_completed' => true,
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('user.preferences.likes.0', 'Food and coffee')
+        ->assertJsonPath('user.preferences.onboarding_completed', true);
+
+    $this->assertDatabaseHas('users', [
+        'id' => $user->id,
+        'occupation' => 'Designer',
+        'location' => 'Lagos',
+    ]);
+});
+
+test('authenticated users can replace discovery preferences and save a custom theme', function () {
+    $user = User::factory()->create([
+        'preferences' => ['likes' => ['work-friendly', 'cafes']],
+    ]);
+
+    $response = $this->actingAs($user, 'sanctum')->patchJson('/api/v1/auth/profile', [
+        'preferences' => [
+            'likes' => ['museums'],
+            'dislikes' => [],
+            'search' => [
+                'radius' => 10000,
+                'view' => 'split',
+                'use_location' => true,
+                'save_history' => true,
+            ],
+            'ai' => ['use_preferences' => false],
+            'theme' => [
+                'preset' => 'custom',
+                'custom' => [
+                    'page' => '#0b1111',
+                    'surface' => '#101a18',
+                    'surfaceElevated' => '#172522',
+                    'text' => '#edf5f1',
+                    'textMuted' => '#a8b9b4',
+                    'border' => '#29413c',
+                    'brand' => '#087f6b',
+                    'accent' => '#e8c36a',
+                    'success' => '#16a34a',
+                    'warning' => '#d97706',
+                    'error' => '#dc2626',
+                    'mapSurface' => '#101a18',
+                    'mapText' => '#edf5f1',
+                    'radius' => 'comfortable',
+                    'density' => 'comfortable',
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('user.preferences.likes', ['museums'])
+        ->assertJsonPath('user.preferences.theme.preset', 'custom');
+
+    expect($user->fresh()->preferences['likes'])->toBe(['museums']);
+});
+
+test('profile settings reject invalid custom theme colors', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user, 'sanctum')->patchJson('/api/v1/auth/profile', [
+        'preferences' => [
+            'theme' => [
+                'preset' => 'custom',
+                'custom' => ['page' => 'transparent'],
+            ],
+        ],
+    ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors(['preferences.theme.custom.page']);
+});

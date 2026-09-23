@@ -64,7 +64,8 @@ class ApiLoggerService
 
             return $apiRequest;
         } catch (\Throwable $e) {
-            Log::error('ApiLoggerService failure: ' . $e->getMessage());
+            Log::error('ApiLoggerService failure: '.$e->getMessage());
+
             // Return an unpersisted model instance so callers never crash
             return new ApiRequest([
                 'external_service' => $externalService,

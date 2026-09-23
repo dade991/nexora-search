@@ -1,5 +1,15 @@
-import React, { useState } from 'react';
-import { LocationItem } from '@/types';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    computeGoogleRoute,
+    findGoogleAirports,
+    getCurrentLocation,
+    loadGoogleMaps,
+    type Coordinates,
+    type GoogleAirport,
+    type GoogleRouteSummary,
+    type TravelMode,
+} from '@/lib/mapsApi';
+import type { LocationItem } from '@/types';
 
 interface InteractiveMapProps {
     places: LocationItem[];
@@ -7,155 +17,530 @@ interface InteractiveMapProps {
     onSelectPlace: (place: LocationItem) => void;
 }
 
+type MapView = 'roadmap' | 'satellite' | 'hybrid' | 'terrain' | '3d';
+
+const mapTypeFor = (view: MapView): string =>
+    view === '3d' ? 'hybrid' : view;
+
+const coordinatesFor = (place?: LocationItem | null): Coordinates | null => {
+    const latitude = Number(place?.latitude);
+    const longitude = Number(place?.longitude);
+
+    return Number.isFinite(latitude) && Number.isFinite(longitude)
+        ? { latitude, longitude }
+        : null;
+};
+
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     places,
     selectedPlace,
     onSelectPlace,
 }) => {
-    const [hoveredPlace, setHoveredPlace] = useState<LocationItem | null>(null);
-    const [zoomLevel, setZoomLevel] = useState(1);
+    const mapContainer = useRef<HTMLDivElement | null>(null);
+    const threeDContainer = useRef<HTMLDivElement | null>(null);
+    const map = useRef<any>(null);
+    const threeDMap = useRef<any>(null);
+    const placeMarkers = useRef<any[]>([]);
+    const airportMarkers = useRef<any[]>([]);
+    const routeLine = useRef<any>(null);
+    const locationMarker = useRef<any>(null);
+    const infoWindow = useRef<any>(null);
+    const [view, setView] = useState<MapView>('roadmap');
+    const [travelMode, setTravelMode] = useState<TravelMode>('DRIVING');
+    const [route, setRoute] = useState<GoogleRouteSummary | null>(null);
+    const [airports, setAirports] = useState<GoogleAirport[]>([]);
+    const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
+    const [isReady, setIsReady] = useState(false);
+    const [isWorking, setIsWorking] = useState(false);
+    const [message, setMessage] = useState<string | null>(null);
+    const [showAirports, setShowAirports] = useState(false);
+    const [showJourney, setShowJourney] = useState(false);
 
-    // Normalize coordinates for 2D radar plane projection
-    const minLat = -40;
-    const maxLat = 60;
-    const minLng = -125;
-    const maxLng = 155;
+    const destination = selectedPlace ?? places[0] ?? null;
+    const destinationCoordinates = coordinatesFor(destination);
 
-    const getMapCoords = (lat: number, lng: number) => {
-        const x = ((lng - minLng) / (maxLng - minLng)) * 88 + 6;
-        const y = ((maxLat - lat) / (maxLat - minLat)) * 76 + 12;
-        return { x: Math.max(5, Math.min(95, x)), y: Math.max(8, Math.min(92, y)) };
+    useEffect(() => {
+        let disposed = false;
+
+        const initialise = async () => {
+            try {
+                const google = await loadGoogleMaps();
+                const { Map, InfoWindow } =
+                    await google.maps.importLibrary('maps');
+
+                if (disposed || !mapContainer.current) {
+                    return;
+                }
+
+                map.current = new Map(mapContainer.current, {
+                    center: destinationCoordinates
+                        ? {
+                              lat: destinationCoordinates.latitude,
+                              lng: destinationCoordinates.longitude,
+                          }
+                        : { lat: 9.082, lng: 8.6753 },
+                    zoom: destinationCoordinates ? 14 : 6,
+                    mapId: 'DEMO_MAP_ID',
+                    mapTypeControl: false,
+                    fullscreenControl: true,
+                    streetViewControl: true,
+                    zoomControl: true,
+                    clickableIcons: true,
+                    gestureHandling: 'greedy',
+                    controlSize: 34,
+                });
+                infoWindow.current = new InfoWindow();
+                setIsReady(true);
+            } catch (error) {
+                setMessage(
+                    error instanceof Error
+                        ? error.message
+                        : 'The map could not be loaded.',
+                );
+            }
+        };
+
+        void initialise();
+
+        return () => {
+            disposed = true;
+            placeMarkers.current.forEach((marker) => marker.setMap?.(null));
+            airportMarkers.current.forEach((marker) => marker.setMap?.(null));
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!isReady || !map.current) {
+            return;
+        }
+
+        let disposed = false;
+
+        const renderPlaces = async () => {
+            const google = await loadGoogleMaps();
+            const { AdvancedMarkerElement, PinElement } =
+                await google.maps.importLibrary('marker');
+
+            if (disposed) {
+                return;
+            }
+
+            placeMarkers.current.forEach((marker) => {
+                marker.map = null;
+            });
+            placeMarkers.current = [];
+            const bounds = new google.maps.LatLngBounds();
+
+            places.forEach((place) => {
+                const coordinates = coordinatesFor(place);
+                if (!coordinates) {
+                    return;
+                }
+
+                const position = {
+                    lat: coordinates.latitude,
+                    lng: coordinates.longitude,
+                };
+                const isSelected = destination?.id === place.id;
+                const pin = new PinElement({
+                    background: isSelected ? '#c45d18' : '#087f6b',
+                    borderColor: '#ffffff',
+                    glyphColor: '#ffffff',
+                    scale: isSelected ? 1.2 : 1,
+                });
+                const marker = new AdvancedMarkerElement({
+                    map: map.current,
+                    position,
+                    title: place.name,
+                    content: pin.element,
+                });
+                marker.addListener('click', () => {
+                    onSelectPlace(place);
+                    infoWindow.current?.setContent(
+                        `<div class="nexora-google-popup"><strong>${place.name}</strong><span>${place.category ?? 'Place'}</span></div>`,
+                    );
+                    infoWindow.current?.open({ map: map.current, anchor: marker });
+                });
+                placeMarkers.current.push(marker);
+                bounds.extend(position);
+            });
+
+            if (places.length > 1 && !bounds.isEmpty()) {
+                map.current.fitBounds(bounds, 72);
+            } else if (destinationCoordinates) {
+                map.current.panTo({
+                    lat: destinationCoordinates.latitude,
+                    lng: destinationCoordinates.longitude,
+                });
+                map.current.setZoom(15);
+            }
+        };
+
+        void renderPlaces();
+
+        return () => {
+            disposed = true;
+        };
+    }, [destination?.id, isReady, onSelectPlace, places]);
+
+    useEffect(() => {
+        if (!isReady || !map.current) {
+            return;
+        }
+
+        map.current.setMapTypeId(mapTypeFor(view));
+
+        if (view !== '3d' || !threeDContainer.current) {
+            if (threeDMap.current) {
+                threeDMap.current.remove();
+                threeDMap.current = null;
+            }
+            return;
+        }
+
+        let disposed = false;
+
+        const render3D = async () => {
+            const google = await loadGoogleMaps();
+            const { Map3DElement } = await google.maps.importLibrary('maps3d');
+            if (disposed || !threeDContainer.current) {
+                return;
+            }
+
+            const center = destinationCoordinates ?? {
+                latitude: 9.082,
+                longitude: 8.6753,
+            };
+            const element = new Map3DElement({
+                center: {
+                    lat: center.latitude,
+                    lng: center.longitude,
+                    altitude: 350,
+                },
+                range: 1800,
+                tilt: 67.5,
+                heading: 20,
+                mode: 'HYBRID',
+            });
+            element.className = 'h-full w-full';
+            threeDContainer.current.replaceChildren(element);
+            threeDMap.current = element;
+        };
+
+        void render3D();
+
+        return () => {
+            disposed = true;
+        };
+    }, [destination?.id, isReady, view]);
+
+    const locateUser = async (): Promise<Coordinates> => {
+        const google = await loadGoogleMaps();
+        const coordinates = userLocation ?? (await getCurrentLocation());
+        setUserLocation(coordinates);
+        locationMarker.current?.setMap?.(null);
+        locationMarker.current = new google.maps.Marker({
+            map: map.current,
+            position: {
+                lat: coordinates.latitude,
+                lng: coordinates.longitude,
+            },
+            title: 'Your location',
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: '#315db5',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 3,
+                scale: 8,
+            },
+        });
+        return coordinates;
+    };
+
+    const handleLocate = async () => {
+        setIsWorking(true);
+        setMessage(null);
+        try {
+            const coordinates = await locateUser();
+            map.current?.panTo({
+                lat: coordinates.latitude,
+                lng: coordinates.longitude,
+            });
+            map.current?.setZoom(15);
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : 'Your location is unavailable.',
+            );
+        } finally {
+            setIsWorking(false);
+        }
+    };
+
+    const handleRoute = async () => {
+        if (!destinationCoordinates) {
+            setMessage('Choose a place before requesting directions.');
+            return;
+        }
+
+        setIsWorking(true);
+        setMessage(null);
+        try {
+            const google = await loadGoogleMaps();
+            const origin = await locateUser();
+            const result = await computeGoogleRoute(
+                origin,
+                destinationCoordinates,
+                travelMode,
+            );
+            routeLine.current?.setMap?.(null);
+            routeLine.current = new google.maps.Polyline({
+                map: map.current,
+                path: result.path,
+                strokeColor: '#2563eb',
+                strokeOpacity: 0.95,
+                strokeWeight: 6,
+            });
+            const bounds = new google.maps.LatLngBounds();
+            result.path.forEach((point) => bounds.extend(point));
+            map.current.fitBounds(bounds, 80);
+            setRoute(result);
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : 'Directions are unavailable right now.',
+            );
+        } finally {
+            setIsWorking(false);
+        }
+    };
+
+    const handleAirports = async () => {
+        if (!destinationCoordinates) {
+            setMessage('Choose a place before finding nearby airports.');
+            return;
+        }
+
+        if (showAirports) {
+            airportMarkers.current.forEach((marker) => {
+                marker.map = null;
+            });
+            airportMarkers.current = [];
+            setAirports([]);
+            setShowAirports(false);
+            return;
+        }
+
+        setIsWorking(true);
+        setMessage(null);
+        try {
+            const google = await loadGoogleMaps();
+            const { AdvancedMarkerElement, PinElement } =
+                await google.maps.importLibrary('marker');
+            const results = await findGoogleAirports(destinationCoordinates);
+            airportMarkers.current = results.map((airport) => {
+                const pin = new PinElement({
+                    glyph: '✈',
+                    background: '#10201e',
+                    borderColor: '#ffffff',
+                    glyphColor: '#e8c36a',
+                });
+                const marker = new AdvancedMarkerElement({
+                    map: map.current,
+                    position: airport.location,
+                    title: airport.name,
+                    content: pin.element,
+                });
+                marker.addListener('click', () => {
+                    infoWindow.current?.setContent(
+                        `<div class="nexora-google-popup"><strong>${airport.name}</strong><span>${airport.address}</span></div>`,
+                    );
+                    infoWindow.current?.open({ map: map.current, anchor: marker });
+                });
+                return marker;
+            });
+            setAirports(results);
+            setShowAirports(true);
+            if (!results.length) {
+                setMessage('No airports were found within 50 km.');
+            }
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : 'Nearby airports are unavailable right now.',
+            );
+        } finally {
+            setIsWorking(false);
+        }
+    };
+
+    const openStreetView = () => {
+        if (!destinationCoordinates || !map.current) {
+            setMessage('Choose a place to open Street View.');
+            return;
+        }
+
+        const panorama = map.current.getStreetView();
+        panorama.setPosition({
+            lat: destinationCoordinates.latitude,
+            lng: destinationCoordinates.longitude,
+        });
+        panorama.setPov({ heading: 0, pitch: 0 });
+        panorama.setVisible(true);
     };
 
     return (
-        <div className="relative h-full min-h-[460px] w-full overflow-hidden rounded-3xl border border-slate-200/80 bg-slate-900 shadow-xl dark:border-slate-800">
-            {/* Map Grid Pattern Background */}
-            <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-70"></div>
-
-            {/* Simulated World Continent Outlines (SVG) */}
-            <svg
-                viewBox="0 0 100 60"
-                className="absolute inset-0 h-full w-full stroke-slate-800/80 fill-slate-800/20 stroke-[0.4] pointer-events-none"
-                preserveAspectRatio="none"
-            >
-                {/* North America */}
-                <path d="M12,12 Q20,10 28,18 Q30,26 24,34 Q18,30 14,24 Z" />
-                {/* South America */}
-                <path d="M26,38 Q32,40 30,52 Q24,54 22,44 Z" />
-                {/* Europe */}
-                <path d="M46,14 Q54,12 56,22 Q48,24 45,18 Z" />
-                {/* Africa */}
-                <path d="M46,26 Q58,28 54,46 Q46,44 44,32 Z" />
-                {/* Asia */}
-                <path d="M58,12 Q80,10 82,28 Q70,36 60,26 Z" />
-                {/* Australia */}
-                <path d="M74,40 Q84,42 82,50 Q72,52 70,44 Z" />
-            </svg>
-
-            {/* Header / Map Telemetry Overlay */}
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-2 rounded-xl bg-slate-950/80 backdrop-blur-md px-3 py-1.5 border border-slate-700/60 shadow-lg">
-                <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="text-[11px] font-bold tracking-wide uppercase text-slate-200">
-                    Live Geocoding Radar
-                </span>
-                <span className="text-[10px] font-mono text-slate-400">
-                    {places.length} Nodes Plotted
-                </span>
-            </div>
-
-            {/* Map Controls */}
-            <div className="absolute top-4 right-4 z-10 flex flex-col gap-1 rounded-xl bg-slate-950/80 backdrop-blur-md p-1 border border-slate-700/60 shadow-lg">
-                <button
-                    onClick={() => setZoomLevel((prev) => Math.min(prev + 0.2, 2))}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 transition"
-                    title="Zoom In"
-                >
-                    <span className="text-base font-bold">+</span>
-                </button>
-                <button
-                    onClick={() => setZoomLevel((prev) => Math.max(prev - 0.2, 0.8))}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 transition"
-                    title="Zoom Out"
-                >
-                    <span className="text-base font-bold">-</span>
-                </button>
-            </div>
-
-            {/* Map Markers Plane */}
+        <section className="relative h-full min-h-[500px] w-full overflow-hidden rounded-[26px] bg-[#dfe7e4] shadow-[0_22px_70px_rgba(16,32,30,0.16)] dark:bg-[#13201d]">
+            <div ref={mapContainer} className="absolute inset-0" />
             <div
-                className="relative h-full w-full transition-transform duration-300"
-                style={{ transform: `scale(${zoomLevel})` }}
-            >
-                {places.map((place) => {
-                    const { x, y } = getMapCoords(place.latitude, place.longitude);
-                    const isSelected = selectedPlace?.id === place.id;
-                    const isHovered = hoveredPlace?.id === place.id;
+                ref={threeDContainer}
+                className={`absolute inset-0 bg-[#dfe7e4] dark:bg-[#13201d] ${view === '3d' ? 'z-[2]' : 'pointer-events-none opacity-0'}`}
+            />
 
-                    return (
-                        <div
-                            key={place.id}
-                            style={{ left: `${x}%`, top: `${y}%` }}
-                            onMouseEnter={() => setHoveredPlace(place)}
-                            onMouseLeave={() => setHoveredPlace(null)}
-                            onClick={() => onSelectPlace(place)}
-                            className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20"
+            {!isReady && !message && (
+                <div className="absolute inset-0 z-20 grid place-items-center bg-[#eef3f1] dark:bg-[#13201d]">
+                    <div className="flex items-center gap-3 rounded-full bg-white px-5 py-3 text-sm text-[#52615e] shadow-lg dark:bg-[#10201e] dark:text-[#c8d5d1]">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#087f6b] border-t-transparent" />
+                        Opening the map
+                    </div>
+                </div>
+            )}
+
+            <div className="absolute top-4 left-4 z-10 flex max-w-[calc(100%-5rem)] gap-1 rounded-full bg-white/95 p-1 shadow-[0_8px_30px_rgba(16,32,30,0.16)] backdrop-blur dark:bg-[#10201e]/95">
+                {(['roadmap', 'satellite', 'hybrid', 'terrain', '3d'] as MapView[]).map(
+                    (option) => (
+                        <button
+                            key={option}
+                            type="button"
+                            onClick={() => setView(option)}
+                            className={`rounded-full px-3 py-2 text-[11px] font-semibold capitalize transition ${
+                                view === option
+                                    ? 'bg-[#10201e] text-white dark:bg-[#e8c36a] dark:text-[#10201e]'
+                                    : 'text-[#65736f] hover:bg-[#edf2f0] dark:text-[#b7c7c1] dark:hover:bg-white/10'
+                            }`}
                         >
-                            {/* Pin Node Pulse */}
-                            <div className="relative flex items-center justify-center">
-                                {(isSelected || isHovered) && (
-                                    <span className="absolute -inset-2 rounded-full bg-blue-500/40 animate-ping"></span>
-                                )}
-                                <div
-                                    className={`flex h-8 w-8 items-center justify-center rounded-full shadow-lg transition-transform duration-200 group-hover:scale-125 ${
-                                        isSelected
-                                            ? 'bg-blue-600 text-white ring-4 ring-blue-400/30'
-                                            : 'bg-slate-900 text-blue-400 ring-2 ring-blue-500/50'
-                                    }`}
-                                >
-                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                    </svg>
-                                </div>
-                            </div>
+                            {option === '3d' ? '3D' : option}
+                        </button>
+                    ),
+                )}
+            </div>
 
-                            {/* Hover Tooltip Popup */}
-                            {(isHovered || isSelected) && (
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 rounded-xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-md z-30 pointer-events-none">
-                                    <div className="flex items-center gap-2">
-                                        {place.photos && place.photos[0] && (
-                                            <img
-                                                src={place.photos[0]}
-                                                alt={place.name}
-                                                className="h-9 w-9 rounded-lg object-cover flex-shrink-0"
-                                            />
-                                        )}
-                                        <div className="truncate">
-                                            <p className="text-xs font-bold text-white truncate">{place.name}</p>
-                                            <div className="flex items-center gap-1.5 text-[10px]">
-                                                <span className="font-semibold text-amber-400">★ {place.rating}</span>
-                                                <span className="text-slate-400 capitalize">• {place.category}</span>
-                                            </div>
-                                        </div>
-                                    </div>
+            <div className="absolute right-4 bottom-4 left-4 z-10 flex flex-col gap-2 sm:right-auto sm:w-[360px]">
+                {message && (
+                    <div className="rounded-2xl bg-white/96 px-4 py-3 text-sm text-[#52615e] shadow-lg backdrop-blur dark:bg-[#10201e]/96 dark:text-[#c8d5d1]">
+                        {message}
+                    </div>
+                )}
+
+                {showJourney && (
+                    <div className="rounded-[22px] bg-white/96 p-4 shadow-[0_12px_40px_rgba(16,32,30,0.2)] backdrop-blur dark:bg-[#10201e]/96">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold text-[#10201e] dark:text-white">
+                                    Directions
+                                </p>
+                                <p className="mt-1 truncate text-xs text-[#71807b] dark:text-[#a8b9b4]">
+                                    From your location to {destination?.name ?? 'the selected place'}
+                                </p>
+                            </div>
+                            {route && (
+                                <div className="shrink-0 text-right">
+                                    <p className="text-sm font-semibold text-[#087f6b]">
+                                        {route.duration}
+                                    </p>
+                                    <p className="text-xs text-[#71807b] dark:text-[#a8b9b4]">
+                                        {route.distance}
+                                    </p>
                                 </div>
                             )}
                         </div>
-                    );
-                })}
-            </div>
+                        <div className="mt-4 grid grid-cols-4 gap-1 rounded-xl bg-[#edf2f0] p-1 dark:bg-white/5">
+                            {(
+                                [
+                                    ['DRIVING', 'Drive'],
+                                    ['WALKING', 'Walk'],
+                                    ['BICYCLING', 'Cycle'],
+                                    ['TRANSIT', 'Transit'],
+                                ] as Array<[TravelMode, string]>
+                            ).map(([mode, label]) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => setTravelMode(mode)}
+                                    className={`rounded-lg px-2 py-2 text-[11px] font-semibold ${
+                                        travelMode === mode
+                                            ? 'bg-white text-[#10201e] shadow-sm dark:bg-[#e8c36a]'
+                                            : 'text-[#71807b] dark:text-[#a8b9b4]'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => void handleRoute()}
+                            disabled={isWorking || !destinationCoordinates}
+                            className="mt-3 w-full rounded-xl bg-[#087f6b] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                            {isWorking ? 'Finding the best route…' : 'Get directions'}
+                        </button>
+                    </div>
+                )}
 
-            {/* Footer / Mapbox Proxy Badge */}
-            <div className="absolute bottom-3 left-4 right-4 z-10 flex items-center justify-between text-[11px] text-slate-400">
-                <div className="flex items-center gap-2">
-                    <span className="rounded-md bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-300 border border-slate-700/60">
-                        EPSG:4326 WGS84
-                    </span>
-                    <span className="hidden sm:inline">Normalized via Mapbox & Google Places Service</span>
+                {airports.length > 0 && (
+                    <div className="max-h-44 overflow-y-auto rounded-[22px] bg-white/96 p-3 shadow-lg backdrop-blur dark:bg-[#10201e]/96">
+                        {airports.map((airport) => (
+                            <button
+                                key={airport.id}
+                                type="button"
+                                onClick={() => {
+                                    map.current?.panTo(airport.location);
+                                    map.current?.setZoom(13);
+                                }}
+                                className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#edf2f0] dark:hover:bg-white/5"
+                            >
+                                <span className="block text-xs font-semibold text-[#10201e] dark:text-white">
+                                    {airport.name}
+                                </span>
+                                <span className="mt-0.5 block truncate text-[11px] text-[#71807b] dark:text-[#a8b9b4]">
+                                    {airport.address}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                <div className="flex flex-wrap gap-2 rounded-[18px] bg-white/96 p-2 shadow-[0_12px_36px_rgba(16,32,30,0.18)] backdrop-blur dark:bg-[#10201e]/96">
+                    <MapAction onClick={() => setShowJourney((open) => !open)}>
+                        Directions
+                    </MapAction>
+                    <MapAction onClick={openStreetView}>Street View</MapAction>
+                    <MapAction onClick={() => void handleAirports()}>
+                        {showAirports ? 'Hide airports' : 'Airports'}
+                    </MapAction>
+                    <MapAction onClick={() => void handleLocate()}>
+                        My location
+                    </MapAction>
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">
-                    Click pin to view live weather & details
-                </span>
             </div>
-        </div>
+        </section>
     );
 };
+
+const MapAction: React.FC<{
+    children: React.ReactNode;
+    onClick: () => void;
+}> = ({ children, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className="rounded-xl px-3 py-2 text-xs font-semibold text-[#43534e] transition hover:bg-[#edf2f0] hover:text-[#087f6b] dark:text-[#c8d5d1] dark:hover:bg-white/10 dark:hover:text-[#7ee2ce]"
+    >
+        {children}
+    </button>
+);

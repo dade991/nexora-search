@@ -37,8 +37,8 @@ class Location extends Model
      * The attributes that should be cast.
      */
     protected $casts = [
-        'latitude' => 'decimal:8',
-        'longitude' => 'decimal:8',
+        'latitude' => 'float',
+        'longitude' => 'float',
         'data' => 'array',
         'hours' => 'array',
         'photos' => 'array',

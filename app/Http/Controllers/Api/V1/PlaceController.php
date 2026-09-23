@@ -25,7 +25,7 @@ class PlaceController extends Controller
             $term = $request->input('search');
             $query->where(function ($q) use ($term) {
                 $q->where('name', 'like', "%{$term}%")
-                  ->orWhere('address', 'like', "%{$term}%");
+                    ->orWhere('address', 'like', "%{$term}%");
             });
         }
 
@@ -77,23 +77,37 @@ class PlaceController extends Controller
         $radiusKm = (float) $request->input('radius', 10);
         $limit = (int) $request->input('limit', 20);
 
-        $query = Location::selectRaw("*, (
-            6371 * acos(
-                cos(radians(?)) *
-                cos(radians(latitude)) *
-                cos(radians(longitude) - radians(?)) +
-                sin(radians(?)) *
-                sin(radians(latitude))
-            )
-        ) AS distance_km", [$lat, $lng, $lat])
-        ->having('distance_km', '<=', $radiusKm)
-        ->orderBy('distance_km');
+        $query = Location::query();
 
         if ($request->filled('category')) {
             $query->where('category', $request->input('category'));
         }
 
-        $places = $query->limit($limit)->get();
+        $places = $query->get()->filter(function ($place) use ($lat, $lng, $radiusKm) {
+            $distance = 6371 * acos(
+                cos(deg2rad($lat)) *
+                cos(deg2rad((float) $place->latitude)) *
+                cos(deg2rad((float) $place->longitude) - deg2rad($lng)) +
+                sin(deg2rad($lat)) *
+                sin(deg2rad((float) $place->latitude))
+            );
+
+            return $distance <= $radiusKm;
+        })->values()->sortBy('distance_km')->take($limit)->values();
+
+        $places = $places->map(function ($place) use ($lat, $lng) {
+            $distance = 6371 * acos(
+                cos(deg2rad($lat)) *
+                cos(deg2rad((float) $place->latitude)) *
+                cos(deg2rad((float) $place->longitude) - deg2rad($lng)) +
+                sin(deg2rad($lat)) *
+                sin(deg2rad((float) $place->latitude))
+            );
+
+            $place->distance_km = round($distance, 3);
+
+            return $place;
+        })->values();
 
         return response()->json([
             'center' => [
@@ -117,28 +131,10 @@ class PlaceController extends Controller
 
         $reviews = $place->reviews ?? [];
 
-        // If no explicit reviews stored in JSON, return realistic structured reviews
-        if (empty($reviews)) {
-            $reviews = [
-                [
-                    'author_name' => 'Sarah Jenkins',
-                    'rating' => 5,
-                    'text' => 'Outstanding location! Extremely clean, friendly staff, and very easy to access.',
-                    'relative_time_description' => '2 days ago',
-                ],
-                [
-                    'author_name' => 'Michael Chen',
-                    'rating' => 4,
-                    'text' => 'Great ambiance and good amenities. Would definitely visit again when in town.',
-                    'relative_time_description' => '1 week ago',
-                ],
-            ];
-        }
-
         return response()->json([
             'place_id' => $place->id,
             'name' => $place->name,
-            'rating' => (float) ($place->rating ?? 4.5),
+            'rating' => $place->rating,
             'review_count' => count($reviews),
             'reviews' => $reviews,
         ]);

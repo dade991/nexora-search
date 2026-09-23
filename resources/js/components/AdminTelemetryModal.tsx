@@ -39,7 +39,7 @@ export const AdminTelemetryModal: React.FC<AdminTelemetryModalProps> = ({
                 providers: {
                     weather_provider: 480,
                     mapbox: 340,
-                    google_places: 260,
+                    searchapi: 260,
                     nvidia_nim: 112,
                     github: 56,
                 },
@@ -63,7 +63,7 @@ export const AdminTelemetryModal: React.FC<AdminTelemetryModalProps> = ({
                 { id: 1, external_service: 'weather_provider', endpoint: '/forecast', method: 'GET', response_code: 200, response_time: 0.084, success: true, created_at: 'Just now' },
                 { id: 2, external_service: 'mapbox', endpoint: '/geocoding/Paris', method: 'GET', response_code: 200, response_time: 0.052, success: true, created_at: '1m ago' },
                 { id: 3, external_service: 'nvidia_nim', endpoint: '/chat/completions', method: 'POST', response_code: 200, response_time: 0.284, success: true, created_at: '2m ago' },
-                { id: 4, external_service: 'google_places', endpoint: '/textsearch', method: 'GET', response_code: 200, response_time: 0.096, success: true, created_at: '3m ago' },
+                { id: 4, external_service: 'searchapi', endpoint: '/search', method: 'GET', response_code: 200, response_time: 0.096, success: true, created_at: '3m ago' },
                 { id: 5, external_service: 'github', endpoint: '/users/taylorotwell', method: 'GET', response_code: 200, response_time: 0.112, success: true, created_at: '5m ago' },
             ]);
         } finally {
@@ -207,7 +207,7 @@ export const AdminTelemetryModal: React.FC<AdminTelemetryModalProps> = ({
                         </h4>
                         <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                             {[
-                                { name: 'Google Places', role: 'Place Details & Search', status: 'Healthy', ping: '86ms' },
+                                { name: 'SearchApi', role: 'Google Maps place search', status: 'Healthy', ping: '86ms' },
                                 { name: 'Mapbox', role: 'Geocoding & Matrix Routing', status: 'Healthy', ping: '52ms' },
                                 { name: 'Open-Meteo', role: 'Live Weather Telemetry', status: 'Healthy', ping: '74ms' },
                                 { name: 'NVIDIA NIM', role: 'Multimodal Vision & AI', status: 'Active', ping: '240ms' },

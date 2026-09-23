@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\ExternalServiceUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Models\Location;
 use App\Services\WeatherService;
@@ -10,9 +11,7 @@ use Illuminate\Http\Request;
 
 class WeatherController extends Controller
 {
-    public function __construct(protected WeatherService $weatherService)
-    {
-    }
+    public function __construct(protected WeatherService $weatherService) {}
 
     /**
      * Get current weather for coordinates or location_id.
@@ -24,11 +23,15 @@ class WeatherController extends Controller
             return $coords;
         }
 
-        $weather = $this->weatherService->getCurrentWeather(
-            $coords['latitude'],
-            $coords['longitude'],
-            $coords['name'] ?? null
-        );
+        try {
+            $weather = $this->weatherService->getCurrentWeather(
+                $coords['latitude'],
+                $coords['longitude'],
+                $coords['name'] ?? null
+            );
+        } catch (ExternalServiceUnavailableException) {
+            $weather = $this->unavailableWeather($coords, 'current');
+        }
 
         return response()->json($weather);
     }
@@ -44,11 +47,15 @@ class WeatherController extends Controller
         }
 
         $days = (int) $request->input('days', 7);
-        $forecast = $this->weatherService->getForecast(
-            $coords['latitude'],
-            $coords['longitude'],
-            $days
-        );
+        try {
+            $forecast = $this->weatherService->getForecast(
+                $coords['latitude'],
+                $coords['longitude'],
+                $days
+            );
+        } catch (ExternalServiceUnavailableException) {
+            $forecast = $this->unavailableWeather($coords, 'forecast');
+        }
 
         return response()->json($forecast);
     }
@@ -63,12 +70,16 @@ class WeatherController extends Controller
             return $coords;
         }
 
-        $historical = $this->weatherService->getHistorical(
-            $coords['latitude'],
-            $coords['longitude'],
-            $request->input('start_date'),
-            $request->input('end_date')
-        );
+        try {
+            $historical = $this->weatherService->getHistorical(
+                $coords['latitude'],
+                $coords['longitude'],
+                $request->input('start_date'),
+                $request->input('end_date')
+            );
+        } catch (ExternalServiceUnavailableException) {
+            $historical = $this->unavailableWeather($coords, 'historical');
+        }
 
         return response()->json($historical);
     }
@@ -98,6 +109,25 @@ class WeatherController extends Controller
             'latitude' => (float) $request->input('latitude'),
             'longitude' => (float) $request->input('longitude'),
             'name' => $request->input('name'),
+        ];
+    }
+
+    /**
+     * @param  array{latitude: float, longitude: float, name?: string|null}  $coordinates
+     * @return array<string, mixed>
+     */
+    private function unavailableWeather(array $coordinates, string $kind): array
+    {
+        return [
+            'source' => 'unavailable',
+            'status' => 'degraded',
+            'message' => 'Live weather is temporarily unavailable. Place details remain available.',
+            'location' => $coordinates,
+            ...match ($kind) {
+                'forecast' => ['forecasts' => []],
+                'historical' => ['history' => []],
+                default => [],
+            },
         ];
     }
 }

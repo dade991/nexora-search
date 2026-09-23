@@ -52,6 +52,23 @@ test('can view place details and reviews', function () {
         ]);
 });
 
+test('serializes search suggestion coordinates as numbers', function () {
+    Location::create([
+        'name' => 'Numeric Coordinates',
+        'address' => '1 Number Lane',
+        'latitude' => 6.524379,
+        'longitude' => 3.379206,
+        'category' => 'landmark',
+    ]);
+
+    $response = $this->getJson('/api/v1/search/suggestions?query=Numeric');
+
+    $response->assertOk();
+
+    expect($response->json('suggestions.0.latitude'))->toBeFloat()
+        ->and($response->json('suggestions.0.longitude'))->toBeFloat();
+});
+
 test('can find nearby places by coordinates', function () {
     Location::create([
         'name' => 'Near Spot',

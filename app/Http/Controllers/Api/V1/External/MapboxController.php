@@ -9,9 +9,7 @@ use Illuminate\Http\Request;
 
 class MapboxController extends Controller
 {
-    public function __construct(protected MapboxService $mapboxService)
-    {
-    }
+    public function __construct(protected MapboxService $mapboxService) {}
 
     /**
      * Forward geocoding query.

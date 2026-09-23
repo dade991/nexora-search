@@ -53,11 +53,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
     };
 
-    const handleQuickFill = () => {
-        setEmail('test@example.com');
-        setPassword('password123');
-    };
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
             <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
@@ -195,16 +190,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         {isLoading ? 'Authenticating...' : mode === 'login' ? 'Sign In to Nexora' : 'Create Free Account'}
                     </button>
 
-                    {/* Quick Demo Fill Button */}
-                    <div className="pt-2 text-center">
-                        <button
-                            type="button"
-                            onClick={handleQuickFill}
-                            className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                        >
-                            Autofill Demo Credentials (test@example.com)
-                        </button>
-                    </div>
                 </form>
             </div>
         </div>

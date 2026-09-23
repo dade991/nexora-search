@@ -14,7 +14,7 @@ Route::get('/', function () {
             'total_categories' => $categories->count(),
             'total_requests' => ApiRequest::count(),
         ];
-    } catch (\Throwable) {
+    } catch (Throwable) {
         $locations = collect([]);
         $categories = collect(['landmark', 'restaurant', 'park', 'museum', 'cafe', 'hotel']);
         $stats = [
@@ -24,9 +24,33 @@ Route::get('/', function () {
         ];
     }
 
-    return Inertia::render('welcome', [
+    return Inertia::render('Landing', [
         'initialLocations' => $locations,
         'categories' => $categories,
         'stats' => $stats,
     ]);
 })->name('home');
+
+Route::get('/login', function () {
+    return Inertia::render('Login');
+})->name('login');
+
+Route::get('/dashboard', function () {
+    $locations = Location::latest()->get();
+    $categories = Location::select('category')->distinct()->pluck('category')->filter()->values();
+    $stats = [
+        'total_locations' => Location::count(),
+        'total_categories' => Location::select('category')->distinct()->pluck('category')->count(),
+        'total_requests' => ApiRequest::count(),
+    ];
+
+    return Inertia::render('Dashboard', [
+        'initialLocations' => $locations,
+        'categories' => $categories,
+        'stats' => $stats,
+    ]);
+})->name('dashboard');
+
+Route::get('/settings', function () {
+    return Inertia::render('Settings');
+})->name('settings');

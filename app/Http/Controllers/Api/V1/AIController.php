@@ -2,17 +2,17 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\ExternalServiceUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Models\Location;
 use App\Services\NvidiaAiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class AIController extends Controller
 {
-    public function __construct(protected NvidiaAiService $aiService)
-    {
-    }
+    public function __construct(protected NvidiaAiService $aiService) {}
 
     /**
      * AI-powered semantic search interpreting natural language prompts.
@@ -35,14 +35,14 @@ class AIController extends Controller
 
         $query->where(function ($q) use ($keywords, $prompt) {
             $q->where('name', 'like', "%{$prompt}%")
-              ->orWhere('category', 'like', "%{$prompt}%")
-              ->orWhere('address', 'like', "%{$prompt}%");
+                ->orWhere('category', 'like', "%{$prompt}%")
+                ->orWhere('address', 'like', "%{$prompt}%");
 
             foreach ($keywords as $kw) {
                 if (strlen($kw) > 3) {
                     $q->orWhere('name', 'like', "%{$kw}%")
-                      ->orWhere('category', 'like', "%{$kw}%")
-                      ->orWhere('subcategory', 'like', "%{$kw}%");
+                        ->orWhere('category', 'like', "%{$kw}%")
+                        ->orWhere('subcategory', 'like', "%{$kw}%");
                 }
             }
         });
@@ -104,19 +104,48 @@ class AIController extends Controller
 
         $messages = $request->input('messages');
         $model = $request->input('model');
-        $apiKey = $request->input('api_key') ?: $request->header('X-NVIDIA-API-KEY');
 
-        // Include system prompt if not present
-        if (($messages[0]['role'] ?? '') !== 'system') {
-            array_unshift($messages, [
-                'role' => 'system',
-                'content' => 'You are Nex AI, the intelligent assistant for Nexora Search. You help users navigate the site, log search telemetry, suggest relevant locations, and answer travel/geographical questions.',
+        $latestUserMessage = collect($messages)->reverse()->firstWhere('role', 'user')['content'] ?? '';
+        if ($this->isLocalConversationIntent($latestUserMessage)) {
+            return response()->json([
+                'provider' => 'nexora_local',
+                'model' => 'nexora-conversation',
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => "Hi! I'm Nexora, your place discovery assistant. I can help you search for places, compare options, plan routes, explore what is nearby, and understand travel or weather context. What would you like to discover?",
+                ],
+                'usage' => [],
             ]);
         }
 
-        $response = $this->aiService->chat($messages, $model, $apiKey);
+        array_unshift($messages, [
+            'role' => 'system',
+            'content' => config('ai.system_prompt'),
+        ]);
+
+        try {
+            $response = $this->aiService->chat($messages, $model);
+        } catch (ExternalServiceUnavailableException) {
+            return response()->json([
+                'provider' => 'nexora_local_fallback',
+                'model' => 'nexora-conversation',
+                'status' => 'degraded',
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => "I'm still here, but my live AI provider is busy right now. I can continue helping you search and compare the places already shown on Nexora. Please retry your question in a moment.",
+                ],
+                'usage' => [],
+            ]);
+        }
 
         return response()->json($response);
+    }
+
+    private function isLocalConversationIntent(string $message): bool
+    {
+        $normalized = Str::of($message)->trim()->lower()->squish()->toString();
+
+        return preg_match('/^(hi|hello|hey|good (morning|afternoon|evening)|who are you|what can you do)[!?. ]*$/i', $normalized) === 1;
     }
 
     /**

@@ -8,9 +8,7 @@ use Illuminate\Http\JsonResponse;
 
 class GithubController extends Controller
 {
-    public function __construct(protected GithubService $githubService)
-    {
-    }
+    public function __construct(protected GithubService $githubService) {}
 
     /**
      * Get user profile on GitHub.

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\ExternalServiceUnavailableException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -35,7 +36,7 @@ class WeatherService
                     $normalized = [
                         'source' => 'Open-Meteo',
                         'location' => [
-                            'name' => $locationName ?? 'Coordinates (' . round($latitude, 4) . ', ' . round($longitude, 4) . ')',
+                            'name' => $locationName ?? 'Coordinates ('.round($latitude, 4).', '.round($longitude, 4).')',
                             'latitude' => $latitude,
                             'longitude' => $longitude,
                             'timezone' => $data['timezone'] ?? 'UTC',
@@ -62,8 +63,7 @@ class WeatherService
                 ApiLoggerService::log('weather_provider', '/forecast', 'GET', $params, 500, null, $duration, false, $e->getMessage());
             }
 
-            // Fallback weather data if external provider is unreachable
-            return $this->fallbackCurrentWeather($latitude, $longitude, $locationName);
+            throw new ExternalServiceUnavailableException('open_meteo', 'Open-Meteo could not complete the request.', 502);
         });
     }
 
@@ -126,12 +126,7 @@ class WeatherService
                 ApiLoggerService::log('weather_provider', '/forecast-daily', 'GET', $params, 500, null, $duration, false, $e->getMessage());
             }
 
-            return [
-                'source' => 'fallback',
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'forecasts' => [],
-            ];
+            throw new ExternalServiceUnavailableException('open_meteo', 'Open-Meteo could not complete the request.', 502);
         });
     }
 
@@ -179,12 +174,7 @@ class WeatherService
                 ApiLoggerService::log('weather_provider', '/archive', 'GET', $params, 500, null, $duration, false, $e->getMessage());
             }
 
-            return [
-                'source' => 'fallback',
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'history' => [],
-            ];
+            throw new ExternalServiceUnavailableException('open_meteo', 'Open-Meteo could not complete the request.', 502);
         });
     }
 
@@ -204,28 +194,5 @@ class WeatherService
             95, 96, 99 => ['label' => 'Thunderstorm', 'icon' => 'bolt'],
             default => ['label' => 'Overcast', 'icon' => 'cloud'],
         };
-    }
-
-    /**
-     * Fallback current weather data.
-     */
-    protected function fallbackCurrentWeather(float $latitude, float $longitude, ?string $locationName): array
-    {
-        return [
-            'source' => 'fallback',
-            'location' => [
-                'name' => $locationName ?? 'Current Location',
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'timezone' => 'UTC',
-            ],
-            'temperature' => 21.5,
-            'feels_like' => 22.0,
-            'humidity' => 58,
-            'precipitation' => 0.0,
-            'wind_speed' => 12.4,
-            'condition' => ['label' => 'Partly cloudy', 'icon' => 'cloud-sun'],
-            'updated_at' => now()->toIso8601String(),
-        ];
     }
 }

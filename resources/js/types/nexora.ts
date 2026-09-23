@@ -50,6 +50,8 @@ export interface DailyForecast {
 
 export interface WeatherReport {
     source: string;
+    status?: 'live' | 'cached' | 'degraded';
+    message?: string;
     location?: {
         name?: string;
         latitude: number;

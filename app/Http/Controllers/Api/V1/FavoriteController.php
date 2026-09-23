@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use App\Models\SavedPlace;
 use App\Models\Location;
+use App\Models\SavedPlace;
+use Illuminate\Http\Request;
 
 class FavoriteController extends Controller
 {
@@ -64,7 +64,7 @@ class FavoriteController extends Controller
         $favorite = SavedPlace::where('user_id', $request->user()->id)
             ->where(function ($q) use ($id) {
                 $q->where('id', $id)
-                  ->orWhere('location_id', $id);
+                    ->orWhere('location_id', $id);
             })
             ->firstOrFail();
 

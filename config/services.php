@@ -41,4 +41,17 @@ return [
         'model' => env('NVIDIA_MODEL', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'),
     ],
 
+    'mapbox' => [
+        'key' => env('MAPBOX_ACCESS_TOKEN'),
+    ],
+
+    'searchapi' => [
+        'key' => env('SEARCHAPI_API_KEY'),
+        'base_url' => env('SEARCHAPI_BASE_URL', 'https://www.searchapi.io/api/v1'),
+    ],
+
+    'github' => [
+        'token' => env('GITHUB_TOKEN'),
+    ],
+
 ];

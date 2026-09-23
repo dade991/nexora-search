@@ -9,6 +9,8 @@ class SearchHistory extends Model
 {
     use HasFactory;
 
+    protected $table = 'search_history';
+
     /**
      * The attributes that are mass assignable.
      */

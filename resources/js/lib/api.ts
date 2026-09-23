@@ -1,3 +1,15 @@
+import SearchController from '@/actions/App/Http/Controllers/Api/V1/SearchController';
+import ProfileController from '@/actions/App/Http/Controllers/Api/V1/ProfileController';
+import type { LocationItem } from '@/types';
+import type { User, UserPreferences } from '@/types/auth';
+
+export interface SearchFilters {
+    category?: string;
+    latitude?: number;
+    longitude?: number;
+    radius?: number;
+}
+
 export const getAuthToken = (): string | null => {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('nexora_token');
@@ -12,7 +24,7 @@ export const setAuthToken = (token: string | null): void => {
     }
 };
 
-export const getStoredUser = (): any | null => {
+export const getStoredUser = (): User | null => {
     if (typeof window === 'undefined') return null;
     try {
         const item = localStorage.getItem('nexora_user');
@@ -22,7 +34,7 @@ export const getStoredUser = (): any | null => {
     }
 };
 
-export const setStoredUser = (user: any | null): void => {
+export const setStoredUser = (user: User | null): void => {
     if (typeof window === 'undefined') return;
     if (user) {
         localStorage.setItem('nexora_user', JSON.stringify(user));
@@ -31,27 +43,47 @@ export const setStoredUser = (user: any | null): void => {
     }
 };
 
-async function fetchClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function fetchClient<T>(
+    endpoint: string,
+    options: RequestInit = {},
+): Promise<T> {
     const token = getAuthToken();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...(options.headers as Record<string, string> || {}),
+        Accept: 'application/json',
+        ...(options.headers as Record<string, string>),
     };
 
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(endpoint, {
-        ...options,
-        headers,
-    });
+    let response: Response;
+    try {
+        response = await fetch(endpoint, {
+            ...options,
+            headers,
+        });
+    } catch (error) {
+        if (
+            error instanceof DOMException &&
+            ['AbortError', 'TimeoutError'].includes(error.name)
+        ) {
+            throw new Error(
+                endpoint.includes('/search')
+                    ? 'Search is taking too long. Your previous results are still available; please try again shortly.'
+                    : 'Nexora is taking too long to respond. Please try again shortly.',
+            );
+        }
+
+        throw error;
+    }
 
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        const message = data.message || `Request failed with status ${response.status}`;
+        const message =
+            data.message || `Request failed with status ${response.status}`;
         const error = new Error(message);
         (error as any).status = response.status;
         (error as any).data = data;
@@ -69,7 +101,12 @@ export const api = {
             body: JSON.stringify(credentials),
         }),
 
-    register: (payload: { name: string; email: string; password: string; password_confirmation: string }) =>
+    register: (payload: {
+        name: string;
+        email: string;
+        password: string;
+        password_confirmation: string;
+    }) =>
         fetchClient<{ user: any; token: string }>('/api/v1/auth/register', {
             method: 'POST',
             body: JSON.stringify(payload),
@@ -77,35 +114,72 @@ export const api = {
 
     me: () => fetchClient<any>('/api/v1/auth/me'),
 
-    logout: () => fetchClient<{ message: string }>('/api/v1/auth/logout', { method: 'POST' }),
+    updateProfile: (payload: {
+        name?: string;
+        occupation?: string | null;
+        age?: number | null;
+        gender?: string | null;
+        bio?: string | null;
+        location?: string | null;
+        latitude?: number;
+        longitude?: number;
+        preferences?: UserPreferences;
+    }) =>
+        fetchClient<{ user: User }>(ProfileController.update.url(), {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+        }),
+
+    logout: () =>
+        fetchClient<{ message: string }>('/api/v1/auth/logout', {
+            method: 'POST',
+        }),
 
     // Search & Places
-    search: (query: string, params: Record<string, any> = {}) => {
-        const qParams = new URLSearchParams({ query, ...params }).toString();
-        return fetchClient<{ query: string; results: any[]; count: number }>(`/api/v1/search?${qParams}`);
-    },
+    search: (query: string, params: SearchFilters = {}) =>
+        fetchClient<{
+            query: string;
+            results: LocationItem[];
+            count: number;
+            provider: string;
+            status: 'live' | 'cached' | 'degraded';
+            message: string | null;
+        }>(SearchController.index.url({ query: { query, ...params } })),
 
     suggestions: (query: string) =>
-        fetchClient<{ query: string; suggestions: any[] }>(`/api/v1/search/suggestions?query=${encodeURIComponent(query)}`),
+        fetchClient<{ query: string; suggestions: LocationItem[] }>(
+            SearchController.suggestions.url({ query: { query } }),
+        ),
 
     places: (params: Record<string, any> = {}) => {
         const qParams = new URLSearchParams(params).toString();
-        return fetchClient<any>(`/api/v1/places${qParams ? `?${qParams}` : ''}`);
+        return fetchClient<any>(
+            `/api/v1/places${qParams ? `?${qParams}` : ''}`,
+        );
     },
 
-    placeDetails: (id: string | number) => fetchClient<{ data: any }>(`/api/v1/places/${id}`),
+    placeDetails: (id: string | number) =>
+        fetchClient<{ data: any }>(`/api/v1/places/${id}`),
 
-    nearby: (latitude: number, longitude: number, radius = 10, category?: string) => {
+    nearby: (
+        latitude: number,
+        longitude: number,
+        radius = 10,
+        category?: string,
+    ) => {
         const qParams = new URLSearchParams({
             latitude: String(latitude),
             longitude: String(longitude),
             radius: String(radius),
             ...(category && category !== 'all' ? { category } : {}),
         }).toString();
-        return fetchClient<{ center: any; count: number; data: any[] }>(`/api/v1/places/nearby?${qParams}`);
+        return fetchClient<{ center: any; count: number; data: any[] }>(
+            `/api/v1/places/nearby?${qParams}`,
+        );
     },
 
-    reviews: (placeId: string | number) => fetchClient<any>(`/api/v1/places/${placeId}/reviews`),
+    reviews: (placeId: string | number) =>
+        fetchClient<any>(`/api/v1/places/${placeId}/reviews`),
 
     // Weather
     weatherCurrent: (latitude: number, longitude: number, name?: string) => {
@@ -133,10 +207,14 @@ export const api = {
             body: JSON.stringify({ prompt, limit }),
         }),
 
-    aiChat: (messages: Array<{ role: string; content: string }>, model?: string) =>
+    aiChat: (
+        messages: Array<{ role: string; content: string }>,
+        model?: string,
+    ) =>
         fetchClient<any>('/api/v1/ai/chat', {
             method: 'POST',
             body: JSON.stringify({ messages, model }),
+            signal: AbortSignal.timeout(12000),
         }),
 
     aiSummary: (locationId?: string | number, location?: any) =>
@@ -157,7 +235,11 @@ export const api = {
     // Favorites
     favorites: () => fetchClient<any>('/api/v1/favorites'),
 
-    addFavorite: (locationId: number | string, notes?: string, tags?: string[]) =>
+    addFavorite: (
+        locationId: number | string,
+        notes?: string,
+        tags?: string[],
+    ) =>
         fetchClient<any>('/api/v1/favorites', {
             method: 'POST',
             body: JSON.stringify({ location_id: locationId, notes, tags }),
@@ -169,15 +251,19 @@ export const api = {
     // History
     history: () => fetchClient<any>('/api/v1/history'),
 
-    clearHistory: () => fetchClient<any>('/api/v1/history', { method: 'DELETE' }),
+    clearHistory: () =>
+        fetchClient<any>('/api/v1/history', { method: 'DELETE' }),
 
     // Admin & Observability
     adminMetrics: () => fetchClient<any>('/api/v1/admin/metrics'),
 
     adminLogs: (params: Record<string, any> = {}) => {
         const qParams = new URLSearchParams(params).toString();
-        return fetchClient<any>(`/api/v1/admin/logs${qParams ? `?${qParams}` : ''}`);
+        return fetchClient<any>(
+            `/api/v1/admin/logs${qParams ? `?${qParams}` : ''}`,
+        );
     },
 
-    clearAdminLogs: () => fetchClient<any>('/api/v1/admin/logs', { method: 'DELETE' }),
+    clearAdminLogs: () =>
+        fetchClient<any>('/api/v1/admin/logs', { method: 'DELETE' }),
 };

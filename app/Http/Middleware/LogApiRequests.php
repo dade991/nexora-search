@@ -34,7 +34,7 @@ class LogApiRequests
 
                 ApiRequest::create([
                     'external_service' => $serviceName,
-                    'endpoint' => '/' . $path,
+                    'endpoint' => '/'.$path,
                     'method' => $request->method(),
                     'parameters' => $request->except(['password', 'password_confirmation', 'token']),
                     'response_code' => $statusCode,
@@ -47,7 +47,7 @@ class LogApiRequests
                 if (! $isSuccess && $statusCode >= 400) {
                     FailedRequest::create([
                         'external_service' => $serviceName,
-                        'endpoint' => '/' . $path,
+                        'endpoint' => '/'.$path,
                         'parameters' => $request->except(['password', 'password_confirmation', 'token']),
                         'response_code' => $statusCode,
                         'error_message' => "Client/Server error with status {$statusCode}",
