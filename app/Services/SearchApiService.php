@@ -53,8 +53,8 @@ class SearchApiService
         $start = microtime(true);
         try {
             $response = Http::acceptJson()
-                ->connectTimeout(5)
-                ->timeout(15)
+                ->connectTimeout(15)
+                ->timeout(30)
                 ->retry(
                     2,
                     250,
@@ -64,7 +64,18 @@ class SearchApiService
                     throw: false,
                 )
                 ->get(config('services.searchapi.base_url').'/search', [...$parameters, 'api_key' => $key]);
-        } catch (ConnectionException) {
+        } catch (ConnectionException $exception) {
+            ApiLoggerService::log(
+                'searchapi',
+                '/search',
+                'GET',
+                $parameters,
+                503,
+                null,
+                microtime(true) - $start,
+                false,
+                $exception->getMessage(),
+            );
             Cache::put(self::CIRCUIT_KEY, true, now()->addSeconds(15));
             throw new ExternalServiceUnavailableException('searchapi', 'SearchApi is temporarily unreachable. Please try again.', 503);
         }

@@ -233,6 +233,31 @@ test('returns a friendly degraded response when all place providers are unavaila
         ->assertDontSee('cURL');
 });
 
+test('records SearchApi connection failures for troubleshooting', function () {
+    config()->set('services.searchapi.key', 'configured-but-unavailable');
+    Http::fake([
+        'https://www.searchapi.io/api/v1/search*' => Http::failedConnection('SearchApi connection timed out'),
+    ]);
+
+    $this->getJson('/api/v1/search?query=connection-failure')
+        ->assertOk()
+        ->assertJsonPath('provider', 'unavailable');
+
+    $this->assertDatabaseHas('api_requests', [
+        'external_service' => 'searchapi',
+        'endpoint' => '/search',
+        'response_code' => 503,
+        'success' => false,
+        'error_message' => 'SearchApi connection timed out',
+    ]);
+    $this->assertDatabaseHas('failed_requests', [
+        'external_service' => 'searchapi',
+        'endpoint' => '/search',
+        'response_code' => 503,
+        'error_message' => 'SearchApi connection timed out',
+    ]);
+});
+
 test('recovers from a transient SearchApi server failure', function () {
     config()->set('services.searchapi.key', 'test-key');
     $attempts = 0;

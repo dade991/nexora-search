@@ -504,6 +504,7 @@ export default function Dashboard({
                 {hasSearched &&
                     !isSearching &&
                     !searchError &&
+                    resultProvider !== 'unavailable' &&
                     displayedLocations.length === 0 && (
                         <p
                             role="status"
@@ -568,7 +569,9 @@ export default function Dashboard({
                                 <p className="mt-2 text-sm text-[#687873] dark:text-[#a8b9b4]">
                                     {isSearching
                                         ? 'Searching…'
-                                        : `${displayedLocations.length} places found`}{' '}
+                                        : resultProvider === 'unavailable'
+                                          ? 'Live search unavailable'
+                                          : `${displayedLocations.length} places found`}{' '}
                                     {resultProvider === 'searchapi_google_maps'
                                         ? '· SearchApi Google Maps results'
                                         : resultProvider === 'openstreetmap'
