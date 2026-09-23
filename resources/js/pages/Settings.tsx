@@ -88,6 +88,7 @@ const buildDraft = (user: User): SettingsDraft => ({
     search: {
         radius: user.preferences?.search?.radius ?? 10000,
         view: user.preferences?.search?.view ?? 'split',
+        layout: user.preferences?.search?.layout ?? 'compact',
         use_location: user.preferences?.search?.use_location ?? true,
         save_history: user.preferences?.search?.save_history ?? true,
     },
@@ -430,6 +431,39 @@ export default function Settings() {
                                     <option value="grid">Card grid</option>
                                     <option value="list">List</option>
                                 </select>
+                            </label>
+                            <label className="text-sm font-medium">
+                                Search layout
+                                <select
+                                    className={inputClass}
+                                    value={draft.search.layout}
+                                    onChange={(event) =>
+                                        setDraft({
+                                            ...draft,
+                                            search: {
+                                                ...draft.search,
+                                                layout: event.target.value as
+                                                    | 'compact'
+                                                    | 'floating'
+                                                    | 'hero',
+                                            },
+                                        })
+                                    }
+                                >
+                                    <option value="compact">
+                                        Compact toolbar
+                                    </option>
+                                    <option value="floating">
+                                        Floating over map
+                                    </option>
+                                    <option value="hero">
+                                        Large discovery hero
+                                    </option>
+                                </select>
+                                <span className="theme-muted mt-1.5 block text-xs leading-5">
+                                    Changes how search sits beside the map
+                                    without changing the map itself.
+                                </span>
                             </label>
                         </div>
                         <div className="mt-6 grid gap-3 sm:grid-cols-2">

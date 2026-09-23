@@ -37,12 +37,15 @@ export interface UserPreferences {
     search?: {
         radius?: number;
         view?: 'split' | 'grid' | 'list';
+        layout?: SearchLayout;
         use_location?: boolean;
         save_history?: boolean;
     };
     ai?: { use_preferences?: boolean };
     theme?: ThemePreference;
 }
+
+export type SearchLayout = 'compact' | 'floating' | 'hero';
 
 export interface User {
     id: number;

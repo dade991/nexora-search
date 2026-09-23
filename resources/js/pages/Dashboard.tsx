@@ -3,13 +3,13 @@ import { Head } from '@inertiajs/react';
 import { LocationItem, SearchHistoryItem } from '@/types';
 import { api, getStoredUser, setStoredUser, setAuthToken } from '@/lib/api';
 import { Navbar } from '@/components/Navbar';
-import { HeroSearch } from '@/components/HeroSearch';
+import { LocationSearch } from '@/components/LocationSearch';
 import { PlaceCard } from '@/components/PlaceCard';
 import { InteractiveMap } from '@/components/InteractiveMap';
 import { PlaceDetailModal } from '@/components/PlaceDetailModal';
 import { FeatureErrorBoundary } from '@/components/FeatureErrorBoundary';
 import { applyTheme, readLocalTheme, storeLocalTheme } from '@/lib/themes';
-import type { ThemePreference, User } from '@/types/auth';
+import type { SearchLayout, ThemePreference, User } from '@/types/auth';
 import { SavedPlacesDrawer } from '@/components/SavedPlacesDrawer';
 import { SearchHistoryDrawer } from '@/components/SearchHistoryDrawer';
 import { AuthModal } from '@/components/AuthModal';
@@ -49,6 +49,9 @@ export default function Dashboard({
     const [darkMode, setDarkMode] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'split' | 'list'>(
         'split',
+    );
+    const [searchLayout] = useState<SearchLayout>(
+        () => getStoredUser()?.preferences?.search?.layout ?? 'compact',
     );
 
     // Search & Filter State
@@ -231,15 +234,19 @@ export default function Dashboard({
                     );
                 const position = await new Promise<GeolocationPosition>(
                     (resolve, reject) =>
-                        navigator.geolocation.getCurrentPosition(resolve, (error) => {
-                            const message =
-                                error.code === error.PERMISSION_DENIED
-                                    ? 'Allow location access to search nearby, or choose Global search.'
-                                    : error.code === error.TIMEOUT
-                                      ? 'Getting your location took too long. Try again or choose Global search.'
-                                      : 'Your location could not be determined. Try again or choose Global search.';
-                            reject(new Error(message));
-                        }, { timeout: 15000, maximumAge: 60000 }),
+                        navigator.geolocation.getCurrentPosition(
+                            resolve,
+                            (error) => {
+                                const message =
+                                    error.code === error.PERMISSION_DENIED
+                                        ? 'Allow location access to search nearby, or choose Global search.'
+                                        : error.code === error.TIMEOUT
+                                          ? 'Getting your location took too long. Try again or choose Global search.'
+                                          : 'Your location could not be determined. Try again or choose Global search.';
+                                reject(new Error(message));
+                            },
+                            { timeout: 15000, maximumAge: 60000 },
+                        ),
                 );
                 center = {
                     latitude: position.coords.latitude,
@@ -456,8 +463,8 @@ export default function Dashboard({
                 }}
             />
 
-            {/* Hero Search Section */}
-            <HeroSearch
+            <LocationSearch
+                layout={searchLayout}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 activeCategory={activeCategory}

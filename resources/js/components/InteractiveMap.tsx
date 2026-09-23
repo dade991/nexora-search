@@ -9,6 +9,7 @@ import {
     type GoogleRouteSummary,
     type TravelMode,
 } from '@/lib/mapsApi';
+import { isMapCenteredOnLocation } from '@/lib/mapLocation';
 import type { LocationItem } from '@/types';
 
 interface InteractiveMapProps {
@@ -55,12 +56,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const airportMarkers = useRef<any[]>([]);
     const routeLine = useRef<any>(null);
     const locationMarker = useRef<any>(null);
+    const userLocationRef = useRef<Coordinates | null>(null);
     const infoWindow = useRef<any>(null);
     const [view, setView] = useState<MapView>('roadmap');
     const [travelMode, setTravelMode] = useState<TravelMode>('DRIVING');
     const [route, setRoute] = useState<GoogleRouteSummary | null>(null);
     const [airports, setAirports] = useState<GoogleAirport[]>([]);
     const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
+    const [isCenteredOnUser, setIsCenteredOnUser] = useState(false);
     const [isReady, setIsReady] = useState(false);
     const [isWorking, setIsWorking] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
@@ -72,6 +75,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     useEffect(() => {
         let disposed = false;
+        let removeCenterListener: (() => void) | undefined;
 
         const initialise = async () => {
             try {
@@ -100,6 +104,26 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     gestureHandling: 'greedy',
                     controlSize: 34,
                 });
+                const centerListener = map.current.addListener(
+                    'center_changed',
+                    () => {
+                        const location = userLocationRef.current;
+                        const center = map.current?.getCenter();
+
+                        if (!location || !center) {
+                            setIsCenteredOnUser(false);
+                            return;
+                        }
+
+                        setIsCenteredOnUser(
+                            isMapCenteredOnLocation(location, {
+                                latitude: center.lat(),
+                                longitude: center.lng(),
+                            }),
+                        );
+                    },
+                );
+                removeCenterListener = () => centerListener.remove();
                 infoWindow.current = new InfoWindow();
                 setIsReady(true);
             } catch (error) {
@@ -115,6 +139,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
         return () => {
             disposed = true;
+            removeCenterListener?.();
             placeMarkers.current.forEach((marker) => marker.setMap?.(null));
             airportMarkers.current.forEach((marker) => marker.setMap?.(null));
         };
@@ -163,9 +188,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     map: map.current,
                     position,
                     title: place.name,
-                    content: pin.element,
+                    gmpClickable: true,
                 });
-                marker.addListener('click', () => {
+                marker.append(pin);
+                marker.addEventListener('gmp-click', () => {
                     onSelectPlace(place);
                     infoWindow.current?.setContent(
                         popupContent(place.name, place.category ?? 'Place'),
@@ -248,24 +274,32 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const locateUser = async (): Promise<Coordinates> => {
         const google = await loadGoogleMaps();
         const coordinates = userLocation ?? (await getCurrentLocation());
+        userLocationRef.current = coordinates;
         setUserLocation(coordinates);
-        locationMarker.current?.setMap?.(null);
-        locationMarker.current = new google.maps.Marker({
+        if (locationMarker.current) {
+            locationMarker.current.map = null;
+        }
+
+        const { AdvancedMarkerElement } =
+            await google.maps.importLibrary('marker');
+        const locationDot = document.createElement('span');
+        const locationDotCore = document.createElement('span');
+        locationDot.setAttribute('aria-hidden', 'true');
+        locationDot.className =
+            'grid h-7 w-7 place-items-center rounded-full bg-blue-500/20';
+        locationDotCore.className =
+            'block h-4 w-4 rounded-full border-[3px] border-white bg-blue-600 shadow-[0_2px_8px_rgba(37,99,235,0.45)]';
+        locationDot.append(locationDotCore);
+
+        locationMarker.current = new AdvancedMarkerElement({
             map: map.current,
             position: {
                 lat: coordinates.latitude,
                 lng: coordinates.longitude,
             },
             title: 'Your location',
-            icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                fillColor: '#315db5',
-                fillOpacity: 1,
-                strokeColor: '#ffffff',
-                strokeWeight: 3,
-                scale: 8,
-            },
         });
+        locationMarker.current.append(locationDot);
         return coordinates;
     };
 
@@ -279,6 +313,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 lng: coordinates.longitude,
             });
             map.current?.setZoom(15);
+            setIsCenteredOnUser(true);
         } catch (error) {
             setMessage(
                 error instanceof Error
@@ -354,7 +389,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             const results = await findGoogleAirports(destinationCoordinates);
             airportMarkers.current = results.map((airport) => {
                 const pin = new PinElement({
-                    glyph: '✈',
+                    glyphText: '✈',
                     background: '#10201e',
                     borderColor: '#ffffff',
                     glyphColor: '#e8c36a',
@@ -363,9 +398,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     map: map.current,
                     position: airport.location,
                     title: airport.name,
-                    content: pin.element,
+                    gmpClickable: true,
                 });
-                marker.addListener('click', () => {
+                marker.append(pin);
+                marker.addEventListener('gmp-click', () => {
                     infoWindow.current?.setContent(
                         popupContent(airport.name, airport.address),
                     );
@@ -439,6 +475,24 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     ),
                 )}
             </div>
+
+            {view !== '3d' && (
+                <button
+                    type="button"
+                    onClick={() => void handleLocate()}
+                    disabled={isWorking || !isReady}
+                    aria-label="Center map on my location"
+                    aria-pressed={isCenteredOnUser}
+                    title="Center on my location"
+                    className={`absolute right-4 bottom-28 z-10 grid h-11 w-11 place-items-center rounded-full border shadow-[0_3px_12px_rgba(16,32,30,0.25)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-60 ${
+                        isCenteredOnUser
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-white/80 bg-white text-blue-600 hover:bg-blue-50 dark:border-white/15 dark:bg-[#10201e] dark:text-blue-400 dark:hover:bg-[#172522]'
+                    }`}
+                >
+                    <LocationControlIcon isWorking={isWorking} />
+                </button>
+            )}
 
             <div className="absolute right-4 bottom-4 left-4 z-10 flex flex-col gap-2 sm:right-auto sm:w-[360px]">
                 {message && (
@@ -534,9 +588,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     <MapAction onClick={() => void handleAirports()}>
                         {showAirports ? 'Hide airports' : 'Airports'}
                     </MapAction>
-                    <MapAction onClick={() => void handleLocate()}>
-                        My location
-                    </MapAction>
                 </div>
             </div>
         </section>
@@ -554,4 +605,18 @@ const MapAction: React.FC<{
     >
         {children}
     </button>
+);
+
+const LocationControlIcon = ({ isWorking }: { isWorking: boolean }) => (
+    <svg
+        className={`h-5 w-5 ${isWorking ? 'animate-pulse' : ''}`}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.25"
+        aria-hidden="true"
+    >
+        <circle cx="12" cy="12" r="3.25" />
+        <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    </svg>
 );

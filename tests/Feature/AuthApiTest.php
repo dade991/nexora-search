@@ -169,3 +169,31 @@ test('profile settings reject invalid custom theme colors', function () {
     $response->assertUnprocessable()
         ->assertJsonValidationErrors(['preferences.theme.custom.page']);
 });
+
+test('authenticated users can save a search layout preference', function (string $layout) {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user, 'sanctum')->patchJson('/api/v1/auth/profile', [
+        'preferences' => [
+            'search' => ['layout' => $layout],
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('user.preferences.search.layout', $layout);
+
+    expect($user->fresh()->preferences['search']['layout'])->toBe($layout);
+})->with(['compact', 'floating', 'hero']);
+
+test('profile settings reject an unknown search layout', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user, 'sanctum')->patchJson('/api/v1/auth/profile', [
+        'preferences' => [
+            'search' => ['layout' => 'fullscreen'],
+        ],
+    ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors(['preferences.search.layout']);
+});
