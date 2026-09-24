@@ -4,6 +4,7 @@ import {
     findGoogleAirports,
     getCurrentLocation,
     loadGoogleMaps,
+    reverseGeocodeLocation,
     type Coordinates,
     type GoogleAirport,
     type GoogleRouteSummary,
@@ -58,6 +59,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const airportMarkers = useRef<any[]>([]);
     const routeLine = useRef<any>(null);
     const locationMarker = useRef<any>(null);
+    const onSelectPlaceRef = useRef(onSelectPlace);
     const userLocationRef = useRef<Coordinates | null>(null);
     const infoWindow = useRef<any>(null);
     const [view, setView] = useState<MapView>('roadmap');
@@ -71,12 +73,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const [showAirports, setShowAirports] = useState(false);
     const [showJourney, setShowJourney] = useState(false);
 
+    useEffect(() => {
+        onSelectPlaceRef.current = onSelectPlace;
+    }, [onSelectPlace]);
+
     const destination = selectedPlace ?? places[0] ?? null;
     const destinationCoordinates = coordinatesFor(destination);
 
     useEffect(() => {
         let disposed = false;
         let removeCenterListener: (() => void) | undefined;
+        let removeClickListener: (() => void) | undefined;
 
         const initialise = async () => {
             try {
@@ -125,6 +132,93 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     },
                 );
                 removeCenterListener = () => centerListener.remove();
+                const clickListener = map.current.addListener(
+                    'click',
+                    async (event: any) => {
+                        if (!event.latLng) {
+                            return;
+                        }
+
+                        const latitude = event.latLng.lat();
+                        const longitude = event.latLng.lng();
+
+                        if (event.placeId) {
+                            event.stop?.();
+                            try {
+                                const { Place } =
+                                    await google.maps.importLibrary('places');
+                                const googlePlace = new Place({ id: event.placeId });
+                                await googlePlace.fetchFields({
+                                    fields: [
+                                        'displayName',
+                                        'formattedAddress',
+                                        'location',
+                                        'primaryTypeDisplayName',
+                                        'nationalPhoneNumber',
+                                        'websiteURI',
+                                        'rating',
+                                        'userRatingCount',
+                                        'regularOpeningHours',
+                                        'photos',
+                                    ],
+                                });
+                                const location = googlePlace.location;
+                                onSelectPlaceRef.current({
+                                    id: `google:${event.placeId}`,
+                                    place_id: `google:${event.placeId}`,
+                                    external_id: event.placeId,
+                                    external_source: 'google_maps',
+                                    name: googlePlace.displayName || 'Selected place',
+                                    address: googlePlace.formattedAddress || null,
+                                    latitude: location?.lat?.() ?? latitude,
+                                    longitude: location?.lng?.() ?? longitude,
+                                    category:
+                                        googlePlace.primaryTypeDisplayName || 'landmark',
+                                    phone: googlePlace.nationalPhoneNumber || null,
+                                    website: googlePlace.websiteURI || null,
+                                    rating: googlePlace.rating ?? null,
+                                    review_count: googlePlace.userRatingCount ?? 0,
+                                    hours: googlePlace.regularOpeningHours?.weekdayDescriptions
+                                        ? {
+                                              display:
+                                                  googlePlace.regularOpeningHours.weekdayDescriptions.join(
+                                                      ' · ',
+                                                  ),
+                                          }
+                                        : null,
+                                    photos:
+                                        googlePlace.photos?.slice(0, 6).map((photo: any) =>
+                                            photo.getURI({ maxWidth: 1200 }),
+                                        ) ?? [],
+                                });
+                            } catch {
+                                setMessage('Google could not load details for this place.');
+                            }
+                            return;
+                        }
+
+                        const coordinates = { latitude, longitude };
+                        const address = await reverseGeocodeLocation(coordinates).catch(
+                            () => null,
+                        );
+                        onSelectPlaceRef.current({
+                            id: `manual:${latitude.toFixed(6)},${longitude.toFixed(6)}`,
+                            place_id: `manual:${latitude.toFixed(6)},${longitude.toFixed(6)}`,
+                            external_source: 'manual_map',
+                            name: address?.split(',')[0] || 'Pinned location',
+                            address:
+                                address ||
+                                `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+                            latitude,
+                            longitude,
+                            category: 'landmark',
+                            rating: null,
+                            review_count: 0,
+                            photos: [],
+                        });
+                    },
+                );
+                removeClickListener = () => clickListener.remove();
                 infoWindow.current = new InfoWindow();
                 setIsReady(true);
             } catch (error) {
@@ -141,6 +235,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         return () => {
             disposed = true;
             removeCenterListener?.();
+            removeClickListener?.();
             placeMarkers.current.forEach((marker) => marker.setMap?.(null));
             airportMarkers.current.forEach((marker) => marker.setMap?.(null));
         };
@@ -168,7 +263,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             placeMarkers.current = [];
             const bounds = new google.maps.LatLngBounds();
 
-            places.forEach((place) => {
+            const markerPlaces =
+                selectedPlace && !places.some((place) => place.id === selectedPlace.id)
+                    ? [selectedPlace, ...places]
+                    : places;
+
+            markerPlaces.forEach((place) => {
                 const coordinates = coordinatesFor(place);
                 if (!coordinates) {
                     return;
@@ -199,7 +299,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 bounds.extend(position);
             });
 
-            if (places.length > 1 && !bounds.isEmpty()) {
+            if (markerPlaces.length > 1 && !bounds.isEmpty()) {
                 map.current.fitBounds(bounds, 72);
             } else if (destinationCoordinates) {
                 map.current.panTo({
@@ -314,7 +414,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             map.current?.setZoom(15);
             setIsCenteredOnUser(true);
             if (coordinates.accuracy !== undefined) {
-                setMessage(describeLocationAccuracy(coordinates.accuracy));
+                const address = await reverseGeocodeLocation(coordinates).catch(
+                    () => null,
+                );
+                setMessage(
+                    `${address ? `${address}. ` : ''}${describeLocationAccuracy(coordinates.accuracy)}`,
+                );
             }
         } catch (error) {
             setMessage(

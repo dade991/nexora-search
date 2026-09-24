@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\Location;
+use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
     config()->set('services.geoapify.key', 'geoapify-test-key');
@@ -75,6 +77,66 @@ it('biases Geoapify searches toward supplied coordinates and filters the respons
         ->assertJsonPath('results.0.name', 'Nearby Cafe')
         ->assertJsonPath('results.0.distance_km', fn (float|int $distance): bool => $distance < 1);
     Http::assertSent(fn ($request): bool => $request['bias'] === 'proximity:7.3986,9.0765');
+});
+
+it('returns nearby venues from Geoapify Places for an explicit near me search', function () {
+    Http::fake([
+        'api.geoapify.com/v2/places*' => Http::response(['features' => [[
+            'properties' => [
+                'place_id' => 'nearby-restaurant',
+                'name' => 'Garden Restaurant',
+                'formatted' => 'Lafia Road, Nasarawa, Nigeria',
+                'lat' => 8.8421,
+                'lon' => 7.9052,
+                'categories' => ['catering.restaurant'],
+                'distance' => 25,
+                'datasource' => ['raw' => ['phone' => '+234 800 000 0000']],
+            ],
+        ]]]),
+    ]);
+
+    $response = $this->getJson('/api/v1/search?query=places&nearby=1&latitude=8.842049&longitude=7.905186&radius=10000');
+
+    $response->assertOk()
+        ->assertJsonPath('provider', 'geoapify')
+        ->assertJsonPath('count', 1)
+        ->assertJsonPath('results.0.name', 'Garden Restaurant')
+        ->assertJsonPath('results.0.category', 'restaurant');
+    $this->assertDatabaseHas('locations', ['place_id' => 'nearby-restaurant', 'external_source' => 'geoapify']);
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://api.geoapify.com/v2/places?categories=accommodation%2Ccatering%2Ccommercial%2Centertainment%2Cleisure%2Ctourism&filter=circle%3A7.905186%2C8.842049%2C10000&bias=proximity%3A7.905186%2C8.842049&limit=20&apiKey=geoapify-test-key');
+});
+
+it('requires coordinates for an explicit near me search', function () {
+    $this->getJson('/api/v1/search?query=places&nearby=1')
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['latitude', 'longitude']);
+});
+
+it('updates an existing map selection instead of rejecting its place identifier', function () {
+    Sanctum::actingAs(User::factory()->create());
+    Location::create([
+        'place_id' => 'google:existing-place',
+        'name' => 'Old map name',
+        'latitude' => 8.84,
+        'longitude' => 7.90,
+        'category' => 'landmark',
+    ]);
+
+    $response = $this->postJson('/api/v1/locations', [
+        'place_id' => 'google:existing-place',
+        'name' => 'Updated map name',
+        'latitude' => 8.842,
+        'longitude' => 7.905,
+        'category' => 'restaurant',
+        'external_source' => 'google_maps',
+    ]);
+
+    $response->assertOk()->assertJsonPath('data.name', 'Updated map name');
+    $this->assertDatabaseCount('locations', 1);
+    $this->assertDatabaseHas('locations', [
+        'place_id' => 'google:existing-place',
+        'name' => 'Updated map name',
+    ]);
 });
 
 it('returns live Geoapify autocomplete suggestions', function () {

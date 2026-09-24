@@ -1,6 +1,7 @@
 import SearchController from "@/actions/App/Http/Controllers/Api/V1/SearchController";
 import ProfileController from "@/actions/App/Http/Controllers/Api/V1/ProfileController";
 import PlaceController from "@/actions/App/Http/Controllers/Api/V1/PlaceController";
+import LocationController from "@/actions/App/Http/Controllers/Api/V1/LocationController";
 import type { LocationItem, PlaceContent } from "@/types";
 import type { User, UserPreferences } from "@/types/auth";
 
@@ -9,6 +10,7 @@ export interface SearchFilters {
     latitude?: number;
     longitude?: number;
     radius?: number;
+    nearby?: boolean;
 }
 
 export const getAuthToken = (): string | null => {
@@ -161,6 +163,29 @@ export const api = {
 
     placeDetails: (id: string | number) =>
         fetchClient<{ data: { content: PlaceContent } }>(PlaceController.show.url(id)),
+
+    createLocation: (location: LocationItem) =>
+        fetchClient<{ data: { id: number } }>(LocationController.store.url(), {
+            method: "POST",
+            body: JSON.stringify({
+                name: location.name,
+                address: location.address,
+                latitude: location.latitude,
+                longitude: location.longitude,
+                place_id: location.place_id,
+                external_id: location.external_id,
+                external_source: location.external_source,
+                category: location.category,
+                subcategory: location.subcategory,
+                phone: location.phone,
+                website: location.website,
+                rating: location.rating == null ? null : String(location.rating),
+                review_count: location.review_count ?? 0,
+                hours: location.hours ? JSON.stringify(location.hours) : null,
+                photos: location.photos ? JSON.stringify(location.photos) : null,
+                reviews: location.reviews ? JSON.stringify(location.reviews) : null,
+            }),
+        }),
 
     nearby: (latitude: number, longitude: number, radius = 10, category?: string) => {
         const qParams = new URLSearchParams({

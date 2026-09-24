@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\LocationResource;
-use Illuminate\Http\Request;
 use App\Models\Location;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class LocationController extends Controller
@@ -32,7 +32,7 @@ class LocationController extends Controller
             $search = $request->input('search');
             $locations->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%");
+                    ->orWhere('address', 'like', "%{$search}%");
             });
         }
 
@@ -53,7 +53,7 @@ class LocationController extends Controller
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
             'address' => 'nullable|string|max:500',
-            'place_id' => 'nullable|string|unique:locations',
+            'place_id' => 'nullable|string',
             'external_id' => 'nullable|string',
             'external_source' => 'nullable|string|max:50',
             'category' => 'nullable|string|max:100',
@@ -74,11 +74,14 @@ class LocationController extends Controller
             ], 422);
         }
 
-        $location = Location::create($request->all());
+        $attributes = $validator->validated();
+        $location = filled($attributes['place_id'] ?? null)
+            ? Location::updateOrCreate(['place_id' => $attributes['place_id']], $attributes)
+            : Location::create($attributes);
 
         return (new LocationResource($location))
-                    ->response()
-                    ->setStatusCode(201);
+            ->response()
+            ->setStatusCode($location->wasRecentlyCreated ? 201 : 200);
     }
 
     /**

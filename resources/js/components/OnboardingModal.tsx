@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api, setStoredUser } from '@/lib/api';
+import { getCurrentLocation, reverseGeocodeLocation } from '@/lib/mapsApi';
 
 interface OnboardingModalProps {
     user: any;
@@ -27,26 +28,23 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ user, onComple
         setLikes((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
     };
 
-    const requestLocation = () => {
-        if (!navigator.geolocation) {
-            setError('Location access is not available in this browser.');
-            return;
-        }
-
+    const requestLocation = async () => {
         setIsLocating(true);
         setError(null);
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-                setLocation('Current device location');
-                setIsLocating(false);
-            },
-            () => {
-                setError('Location was not shared. You can continue without it.');
-                setIsLocating(false);
-            },
-            { enableHighAccuracy: false, maximumAge: 300000, timeout: 10000 }
-        );
+        try {
+            const position = await getCurrentLocation();
+            setCoordinates({ latitude: position.latitude, longitude: position.longitude });
+            const address = await reverseGeocodeLocation(position).catch(() => null);
+            setLocation(address || 'Current device location');
+        } catch (locationError) {
+            setError(
+                locationError instanceof Error
+                    ? locationError.message
+                    : 'Location was not shared. You can continue without it.',
+            );
+        } finally {
+            setIsLocating(false);
+        }
     };
 
     const finish = async () => {

@@ -128,6 +128,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                                 Full Name
                             </label>
                             <input
+                                id="auth-name"
+                                name="name"
                                 type="text"
                                 required
                                 value={name}
@@ -143,6 +145,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             Email Address
                         </label>
                         <input
+                            id="auth-email"
+                            name="email"
                             type="email"
                             required
                             value={email}
@@ -157,6 +161,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             Password
                         </label>
                         <input
+                            id="auth-password"
+                            name="password"
                             type="password"
                             required
                             value={password}
@@ -172,6 +178,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                                 Confirm Password
                             </label>
                             <input
+                                id="auth-password-confirmation"
+                                name="password_confirmation"
                                 type="password"
                                 required
                                 value={passwordConfirmation}

@@ -223,6 +223,8 @@ export default function Landing() {
                                         />
                                     </svg>
                                     <input
+                                        id="landing-place-search"
+                                        name="place_search"
                                         value={searchQuery}
                                         onChange={(event) =>
                                             setSearchQuery(event.target.value)

@@ -88,10 +88,29 @@ export function getCurrentLocation(): Promise<Coordinates> {
                     accuracy: position.coords.accuracy,
                 });
             },
-            () => reject(new Error("Allow location access to get directions.")),
+            (error) => {
+                const message =
+                    error.code === error.PERMISSION_DENIED
+                        ? "Allow location access in your browser, then try again."
+                        : error.code === error.TIMEOUT
+                          ? "Getting a fresh location took too long. Try again near a window or enable device location services."
+                          : "Your device could not provide a location. Check Windows location services and try again.";
+                reject(new Error(message));
+            },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
         );
     });
+}
+
+export async function reverseGeocodeLocation(coordinates: Coordinates): Promise<string | null> {
+    const google = await loadGoogleMaps();
+    const { Geocoder } = await google.maps.importLibrary("geocoding");
+    const geocoder = new Geocoder();
+    const response = await geocoder.geocode({
+        location: { lat: coordinates.latitude, lng: coordinates.longitude },
+    });
+
+    return response.results?.[0]?.formatted_address ?? null;
 }
 
 export async function computeGoogleRoute(

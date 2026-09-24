@@ -15,6 +15,8 @@ import { SearchHistoryDrawer } from '@/components/SearchHistoryDrawer';
 import { AuthModal } from '@/components/AuthModal';
 import { OnboardingModal } from '@/components/OnboardingModal';
 import { MapPlacePanel } from '@/components/MapPlacePanel';
+import { getCurrentLocation, reverseGeocodeLocation } from '@/lib/mapsApi';
+import { describeLocationAccuracy } from '@/lib/mapLocation';
 
 interface DashboardProps {
     initialLocations?: LocationItem[];
@@ -65,6 +67,7 @@ export default function Dashboard({
 
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchNotice, setSearchNotice] = useState<string | null>(null);
+    const [locationNotice, setLocationNotice] = useState<string | null>(null);
     const [resultQuery, setResultQuery] = useState('');
     const [resultProvider, setResultProvider] = useState('');
     const [searchCoordinates, setSearchCoordinates] = useState<{
@@ -238,25 +241,10 @@ export default function Dashboard({
                     throw new Error(
                         'Location is unavailable in this browser. Choose Global or use another browser.',
                     );
-                const position = await new Promise<GeolocationPosition>(
-                    (resolve, reject) =>
-                        navigator.geolocation.getCurrentPosition(
-                            resolve,
-                            (error) => {
-                                const message =
-                                    error.code === error.PERMISSION_DENIED
-                                        ? 'Allow location access to search nearby, or choose Global search.'
-                                        : error.code === error.TIMEOUT
-                                          ? 'Getting your location took too long. Try again or choose Global search.'
-                                          : 'Your location could not be determined. Try again or choose Global search.';
-                                reject(new Error(message));
-                            },
-                            { timeout: 15000, maximumAge: 60000 },
-                        ),
-                );
+                const position = await getCurrentLocation();
                 center = {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
+                    latitude: position.latitude,
+                    longitude: position.longitude,
                 };
                 setSearchCoordinates(center);
             }
@@ -267,6 +255,7 @@ export default function Dashboard({
                     radiusKm < 1000
                         ? Math.min(radiusKm * 1000, 50000)
                         : undefined,
+                nearby: nearby || undefined,
             });
             if (sequence !== searchSequence.current) return;
             if (res.status === 'degraded') {
@@ -336,34 +325,36 @@ export default function Dashboard({
         void runSearch(searchQuery);
     };
 
-    const handleNearMe = () => {
-        if (!navigator.geolocation) {
-            setSearchError('Location is unavailable in this browser.');
-            return;
-        }
+    const handleNearMe = async () => {
         setIsSearching(true);
         setSearchError(null);
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const center = {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                };
-                setSearchCoordinates(center);
-                const query =
-                    searchQuery.trim() ||
-                    (activeCategory === 'all' ? 'places' : activeCategory);
-                setSearchQuery(query);
-                void runSearch(query, center, true);
-            },
-            () => {
-                setIsSearching(false);
-                setSearchError(
-                    'Allow location access to find nearby places, or search by city name.',
-                );
-            },
-            { timeout: 10000, maximumAge: 60000 },
-        );
+        setLocationNotice(null);
+        try {
+            const position = await getCurrentLocation();
+            const center = {
+                latitude: position.latitude,
+                longitude: position.longitude,
+            };
+            setSearchCoordinates(center);
+            const query =
+                searchQuery.trim() ||
+                (activeCategory === 'all' ? 'places' : activeCategory);
+            setSearchQuery(query);
+            const address = await reverseGeocodeLocation(position).catch(
+                () => null,
+            );
+            setLocationNotice(
+                `${address ? `${address}. ` : ''}${describeLocationAccuracy(position.accuracy ?? 0)}.`,
+            );
+            await runSearch(query, center, true);
+        } catch (error) {
+            setIsSearching(false);
+            setSearchError(
+                error instanceof Error
+                    ? error.message
+                    : 'Allow location access to find nearby places, or search by city name.',
+            );
+        }
     };
 
     const handleToggleSave = async (place: LocationItem) => {
@@ -396,8 +387,22 @@ export default function Dashboard({
     };
 
     // Open Place Details
-    const handleBrowsePlace = (place: LocationItem) => {
-        setSelectedPlace(place);
+    const handleBrowsePlace = async (place: LocationItem) => {
+        let browsablePlace = place;
+        if (typeof place.id === 'string' && place.id.includes(':')) {
+            try {
+                const response = await api.createLocation(place);
+                browsablePlace = { ...place, id: response.data.id };
+            } catch (error) {
+                setSearchError(
+                    error instanceof Error
+                        ? error.message
+                        : 'This map marker could not be prepared for full details.',
+                );
+                return;
+            }
+        }
+        setSelectedPlace(browsablePlace);
         setIsDetailOpen(true);
     };
 
@@ -532,6 +537,14 @@ export default function Dashboard({
                         className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
                     >
                         {searchNotice}
+                    </p>
+                )}
+                {locationNotice && (
+                    <p
+                        role="status"
+                        className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200"
+                    >
+                        Searching near {locationNotice}
                     </p>
                 )}
                 {isSearching && (
@@ -881,6 +894,8 @@ export default function Dashboard({
                         <div className="border-t border-[#10201e]/10 p-3 dark:border-white/10">
                             <div className="flex items-end gap-2 rounded-2xl border border-[#10201e]/10 bg-[#f7f8f5] p-2 dark:border-white/10 dark:bg-[#0b1111]">
                                 <textarea
+                                    id="nexora-assistant-message"
+                                    name="assistant_message"
                                     value={aiAssistantInput}
                                     onChange={(event) =>
                                         setAiAssistantInput(event.target.value)

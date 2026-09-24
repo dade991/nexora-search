@@ -14,13 +14,15 @@ class LocationSearchService
     public function __construct(private GeoapifyService $geoapify) {}
 
     /** @return array<string, mixed> */
-    public function search(string $query, ?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit): array
+    public function search(string $query, ?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit, bool $nearby = false): array
     {
         try {
             $provider = 'geoapify';
             $status = 'live';
             $message = null;
-            $items = collect($this->geoapify->search($this->placeQuery($query, $category), $latitude, $longitude, $limit));
+            $items = collect($nearby
+                ? $this->geoapify->nearby($latitude, $longitude, $radius, $category, $limit)
+                : $this->geoapify->search($this->placeQuery($query, $category), $latitude, $longitude, $limit));
         } catch (ExternalServiceUnavailableException) {
             $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
             if ($local->isNotEmpty()) {

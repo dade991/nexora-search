@@ -148,6 +148,7 @@ export function LocationSearch({
                         </label>
                         <input
                             id="location-search"
+                            name="location_search"
                             type="search"
                             autoComplete="off"
                             value={searchQuery}
@@ -337,6 +338,8 @@ function SearchFilters({
                 <label className="text-xs font-semibold text-[var(--nx-text-muted)]">
                     <span className="mb-1.5 block sm:sr-only">Radius</span>
                     <select
+                        id="search-radius"
+                        name="search_radius"
                         value={radiusKm}
                         onChange={(event) =>
                             setRadiusKm(Number(event.target.value))

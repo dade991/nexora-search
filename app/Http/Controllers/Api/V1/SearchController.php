@@ -15,17 +15,26 @@ class SearchController extends Controller
     {
         $data = $request->validate([
             'query' => 'required|string|min:1|max:200',
-            'latitude' => 'nullable|required_with:longitude|numeric|between:-90,90',
-            'longitude' => 'nullable|required_with:latitude|numeric|between:-180,180',
+            'latitude' => 'nullable|required_if:nearby,true|required_with:longitude|numeric|between:-90,90',
+            'longitude' => 'nullable|required_if:nearby,true|required_with:latitude|numeric|between:-180,180',
             'radius' => 'nullable|integer|min:1|max:50000',
             'category' => 'nullable|string|in:all,restaurant,cafe,park,museum,hotel,landmark',
             'limit' => 'nullable|integer|min:1|max:20',
+            'nearby' => 'nullable|boolean',
         ]);
         $query = trim($data['query']);
         $latitude = isset($data['latitude']) ? (float) $data['latitude'] : null;
         $longitude = isset($data['longitude']) ? (float) $data['longitude'] : null;
         $category = ($data['category'] ?? 'all') === 'all' ? null : $data['category'];
-        $result = $this->search->search($query, $latitude, $longitude, $data['radius'] ?? 10000, $category, $data['limit'] ?? 20);
+        $result = $this->search->search(
+            $query,
+            $latitude,
+            $longitude,
+            $data['radius'] ?? 10000,
+            $category,
+            $data['limit'] ?? 20,
+            (bool) ($data['nearby'] ?? false),
+        );
         $user = $request->user('sanctum') ?? $request->user();
         if ($user && data_get($user->preferences, 'search.save_history', true) !== false) {
             $user->searchHistory()->create([

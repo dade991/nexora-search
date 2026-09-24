@@ -160,6 +160,8 @@ export default function Login() {
                                     <label className="block text-xs font-semibold tracking-[0.18em] text-[#52615e] uppercase dark:text-[#b7c7c1]">
                                         Full name
                                         <input
+                                            id="login-name"
+                                            name="name"
                                             type="text"
                                             value={name}
                                             onChange={(event) =>
@@ -175,6 +177,8 @@ export default function Login() {
                                 <label className="block text-xs font-semibold tracking-[0.18em] text-[#52615e] uppercase dark:text-[#b7c7c1]">
                                     Email
                                     <input
+                                        id="login-email"
+                                        name="email"
                                         type="email"
                                         value={email}
                                         onChange={(event) =>
@@ -189,6 +193,8 @@ export default function Login() {
                                 <label className="block text-xs font-semibold tracking-[0.18em] text-[#52615e] uppercase dark:text-[#b7c7c1]">
                                     Password
                                     <input
+                                        id="login-password"
+                                        name="password"
                                         type="password"
                                         value={password}
                                         onChange={(event) =>
@@ -204,6 +210,8 @@ export default function Login() {
                                     <label className="block text-xs font-semibold tracking-[0.18em] text-[#52615e] uppercase dark:text-[#b7c7c1]">
                                         Confirm password
                                         <input
+                                            id="login-password-confirmation"
+                                            name="password_confirmation"
                                             type="password"
                                             value={passwordConfirmation}
                                             onChange={(event) =>

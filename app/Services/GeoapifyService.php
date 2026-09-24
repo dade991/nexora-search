@@ -13,6 +13,8 @@ use Throwable;
 
 class GeoapifyService
 {
+    private const NEARBY_CATEGORIES = 'accommodation,catering,commercial,entertainment,leisure,tourism';
+
     /** @return array<int, array<string, mixed>> */
     public function search(string $query, ?float $latitude, ?float $longitude, int $limit): array
     {
@@ -47,15 +49,33 @@ class GeoapifyService
         return $this->places('/v1/geocode/autocomplete', $parameters, 'geoapify_suggestions_v1_');
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function nearby(?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit): array
+    {
+        if ($latitude === null || $longitude === null) {
+            return [];
+        }
+
+        $parameters = [
+            'categories' => $this->nearbyCategories($category),
+            'filter' => "circle:{$longitude},{$latitude},{$radius}",
+            'bias' => "proximity:{$longitude},{$latitude}",
+            'limit' => min($limit, 20),
+            'apiKey' => $this->key(),
+        ];
+
+        return $this->places('/v2/places', $parameters, 'geoapify_nearby_v1_', true);
+    }
+
     /**
      * @param  array<string, mixed>  $parameters
      * @return array<int, array<string, mixed>>
      */
-    private function places(string $endpoint, array $parameters, string $cachePrefix): array
+    private function places(string $endpoint, array $parameters, string $cachePrefix, bool $geoJson = false): array
     {
         $cacheKey = $cachePrefix.md5((string) json_encode($parameters));
 
-        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($endpoint, $parameters): array {
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($endpoint, $parameters, $geoJson): array {
             $startedAt = microtime(true);
 
             try {
@@ -79,11 +99,16 @@ class GeoapifyService
 
             ApiLoggerService::log('geoapify', $endpoint, 'GET', Arr::except($parameters, ['apiKey']), $response->status(), null, microtime(true) - $startedAt, $response->successful());
 
-            if (! $response->successful() || ! is_array($response->json('results'))) {
+            $results = $response->json($geoJson ? 'features' : 'results');
+            if (! $response->successful() || ! is_array($results)) {
                 throw new ExternalServiceUnavailableException('geoapify', 'Live place search is temporarily unavailable.', 503);
             }
 
-            return collect($response->json('results'))->map($this->normalize(...))->filter()->values()->all();
+            return collect($results)
+                ->map(fn (array $result): ?array => $this->normalize($geoJson ? ($result['properties'] ?? []) : $result))
+                ->filter()
+                ->values()
+                ->all();
         });
     }
 
@@ -98,7 +123,7 @@ class GeoapifyService
         }
 
         $raw = $result['datasource']['raw'] ?? [];
-        $category = (string) ($result['category'] ?? $result['result_type'] ?? 'landmark');
+        $category = (string) ($result['category'] ?? data_get($result, 'categories.0') ?? $result['result_type'] ?? 'landmark');
 
         return [
             'place_id' => (string) $result['place_id'],
@@ -135,6 +160,19 @@ class GeoapifyService
             Str::contains($category, ['museum', 'gallery', 'arts']) => 'museum',
             Str::contains($category, ['hotel', 'motel', 'accommodation', 'lodging']) => 'hotel',
             default => 'landmark',
+        };
+    }
+
+    private function nearbyCategories(?string $category): string
+    {
+        return match ($category) {
+            'restaurant' => 'catering.restaurant',
+            'cafe' => 'catering.cafe',
+            'park' => 'leisure.park',
+            'museum' => 'entertainment.museum',
+            'hotel' => 'accommodation.hotel',
+            'landmark' => 'tourism.sights,building.historic',
+            default => self::NEARBY_CATEGORIES,
         };
     }
 
