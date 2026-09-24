@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { LocationItem, WeatherReport } from '@/types';
-import { api } from '@/lib/api';
+import React, { useState, useEffect } from "react";
+import { LocationItem, PlaceContent, WeatherReport } from "@/types";
+import { api } from "@/lib/api";
 
 interface PlaceDetailModalProps {
     place: LocationItem | null;
@@ -18,8 +18,10 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
     onToggleSave,
 }) => {
     const [activeTab, setActiveTab] = useState<
-        'overview' | 'weather' | 'hours' | 'reviews'
-    >('overview');
+        "overview" | "photos" | "videos" | "weather" | "hours" | "reviews"
+    >("overview");
+    const [content, setContent] = useState<PlaceContent | null>(null);
+    const [isLoadingContent, setIsLoadingContent] = useState(false);
     const [weather, setWeather] = useState<WeatherReport | null>(null);
     const [weatherNotice, setWeatherNotice] = useState<string | null>(null);
     const [isLoadingWeather, setIsLoadingWeather] = useState(false);
@@ -31,17 +33,21 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
         // Reset state
         setWeather(null);
         setWeatherNotice(null);
-        setActiveTab('overview');
+        setContent(null);
+        setActiveTab("overview");
+
+        setIsLoadingContent(true);
+        api.placeDetails(place.id)
+            .then((response) => setContent(response.data.content))
+            .catch(() => setContent(null))
+            .finally(() => setIsLoadingContent(false));
 
         // Fetch live weather for the place coordinates.
         setIsLoadingWeather(true);
         api.weatherForecast(place.latitude, place.longitude, 5)
             .then((data) => {
-                if (data.status === 'degraded') {
-                    setWeatherNotice(
-                        data.message ??
-                            'Live weather is temporarily unavailable.',
-                    );
+                if (data.status === "degraded") {
+                    setWeatherNotice(data.message ?? "Live weather is temporarily unavailable.");
                     setWeather(null);
                     return;
                 }
@@ -50,7 +56,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
             })
             .catch(() => {
                 setWeather(null);
-                setWeatherNotice('Live weather is temporarily unavailable.');
+                setWeatherNotice("Live weather is temporarily unavailable.");
             })
             .finally(() => setIsLoadingWeather(false));
     }, [place]);
@@ -62,7 +68,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
     const formattedCoordinates =
         Number.isFinite(latitude) && Number.isFinite(longitude)
             ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            : 'Coordinates unavailable';
+            : "Coordinates unavailable";
 
     const handleCopyAddress = () => {
         if (place.address) {
@@ -72,8 +78,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
         }
     };
 
-    const photoUrl =
-        place.photos && place.photos.length > 0 ? place.photos[0] : null;
+    const photoUrl = place.photos && place.photos.length > 0 ? place.photos[0] : null;
 
     return (
         <div className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-md duration-200 sm:p-6">
@@ -83,12 +88,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                     onClick={onClose}
                     className="absolute top-4 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/60 text-white backdrop-blur-md transition hover:bg-slate-900/90"
                 >
-                    <svg
-                        className="h-5 w-5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -108,7 +108,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                         />
                     ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900 text-lg font-bold tracking-[0.2em] text-slate-300 uppercase">
-                            {place.category || 'Place'}
+                            {place.category || "Place"}
                         </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
@@ -122,17 +122,15 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                 </span>
                                 {place.rating !== null &&
                                 place.rating !== undefined &&
-                                place.rating !== '' ? (
+                                place.rating !== "" ? (
                                     <span className="flex items-center gap-1 rounded-full bg-amber-500/90 px-2.5 py-0.5 text-xs font-bold text-slate-950">
                                         ★ {place.rating}
                                     </span>
                                 ) : null}
-                                {typeof place.review_count === 'number' &&
+                                {typeof place.review_count === "number" &&
                                     place.review_count > 0 && (
                                         <span className="text-xs font-medium text-slate-300">
-                                            (
-                                            {place.review_count.toLocaleString()}{' '}
-                                            reviews)
+                                            ({place.review_count.toLocaleString()} reviews)
                                         </span>
                                     )}
                             </div>
@@ -152,12 +150,12 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                 onClick={() => onToggleSave(place)}
                                 className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold shadow-lg backdrop-blur-md transition active:scale-95 ${
                                     isSaved
-                                        ? 'bg-rose-500 text-white'
-                                        : 'bg-white/90 text-slate-900 hover:bg-white'
+                                        ? "bg-rose-500 text-white"
+                                        : "bg-white/90 text-slate-900 hover:bg-white"
                                 }`}
                             >
                                 <svg
-                                    className={`h-4 w-4 ${isSaved ? 'fill-white' : 'fill-none text-rose-500'}`}
+                                    className={`h-4 w-4 ${isSaved ? "fill-white" : "fill-none text-rose-500"}`}
                                     viewBox="0 0 24 24"
                                     stroke="currentColor"
                                 >
@@ -168,34 +166,50 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                         d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
                                     />
                                 </svg>
-                                <span>
-                                    {isSaved
-                                        ? 'Saved to Favorites'
-                                        : 'Save Place'}
-                                </span>
+                                <span>{isSaved ? "Saved to Favorites" : "Save Place"}</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
                 {/* Sub-Navigation Tabs */}
-                <div className="flex border-b border-slate-200 bg-slate-50/50 px-6 dark:border-slate-800 dark:bg-slate-900/50">
+                <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50/50 px-6 dark:border-slate-800 dark:bg-slate-900/50">
                     <button
-                        onClick={() => setActiveTab('overview')}
+                        onClick={() => setActiveTab("overview")}
                         className={`border-b-2 px-3 py-3 text-xs font-semibold transition ${
-                            activeTab === 'overview'
-                                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                            activeTab === "overview"
+                                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                         }`}
                     >
                         Overview
                     </button>
                     <button
-                        onClick={() => setActiveTab('weather')}
+                        onClick={() => setActiveTab("photos")}
+                        className={`border-b-2 px-3 py-3 text-xs font-semibold whitespace-nowrap transition ${
+                            activeTab === "photos"
+                                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+                        }`}
+                    >
+                        Photos {content?.photos.length ? `(${content.photos.length})` : ""}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("videos")}
+                        className={`border-b-2 px-3 py-3 text-xs font-semibold whitespace-nowrap transition ${
+                            activeTab === "videos"
+                                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+                        }`}
+                    >
+                        Videos {content?.videos.length ? `(${content.videos.length})` : ""}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("weather")}
                         className={`flex items-center gap-1.5 border-b-2 px-3 py-3 text-xs font-semibold transition ${
-                            activeTab === 'weather'
-                                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                            activeTab === "weather"
+                                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                         }`}
                     >
                         <span>Live Weather</span>
@@ -204,21 +218,21 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                         </span>
                     </button>
                     <button
-                        onClick={() => setActiveTab('hours')}
+                        onClick={() => setActiveTab("hours")}
                         className={`border-b-2 px-3 py-3 text-xs font-semibold transition ${
-                            activeTab === 'hours'
-                                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                            activeTab === "hours"
+                                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                         }`}
                     >
                         Hours & Access
                     </button>
                     <button
-                        onClick={() => setActiveTab('reviews')}
+                        onClick={() => setActiveTab("reviews")}
                         className={`border-b-2 px-3 py-3 text-xs font-semibold transition ${
-                            activeTab === 'reviews'
-                                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                            activeTab === "reviews"
+                                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                         }`}
                     >
                         Reviews
@@ -228,8 +242,34 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                 {/* Tab Content Body */}
                 <div className="max-h-[460px] overflow-y-auto p-6">
                     {/* TAB: OVERVIEW */}
-                    {activeTab === 'overview' && (
+                    {activeTab === "overview" && (
                         <div className="space-y-6">
+                            {content?.description && (
+                                <div>
+                                    <p className="text-sm leading-7 text-slate-700 dark:text-slate-300">
+                                        {content.description}
+                                    </p>
+                                    {content.article_url && (
+                                        <a
+                                            href={content.article_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="mt-3 inline-flex text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                                        >
+                                            Continue on Wikipedia
+                                        </a>
+                                    )}
+                                </div>
+                            )}
+                            {isLoadingContent && (
+                                <div
+                                    className="animate-pulse space-y-2"
+                                    aria-label="Loading place information"
+                                >
+                                    <div className="h-3 rounded bg-slate-200 dark:bg-slate-800" />
+                                    <div className="h-3 w-4/5 rounded bg-slate-200 dark:bg-slate-800" />
+                                </div>
+                            )}
                             {/* Address & Quick Info Strip */}
                             <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50 p-4 sm:flex-row sm:items-center dark:border-slate-800 dark:bg-slate-800/60">
                                 <div className="flex items-start gap-3">
@@ -253,8 +293,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                             Location Address
                                         </p>
                                         <p className="text-xs text-slate-600 dark:text-slate-300">
-                                            {place.address ||
-                                                'Address unlisted'}
+                                            {place.address || "Address unlisted"}
                                         </p>
                                         <p className="mt-0.5 font-mono text-[10px] text-slate-400">
                                             Coordinates: {formattedCoordinates}
@@ -279,16 +318,100 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                             d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
                                         />
                                     </svg>
-                                    <span>
-                                        {copiedAddress ? 'Copied!' : 'Copy'}
-                                    </span>
+                                    <span>{copiedAddress ? "Copied!" : "Copy"}</span>
                                 </button>
                             </div>
                         </div>
                     )}
 
+                    {activeTab === "photos" && (
+                        <div>
+                            {isLoadingContent ? (
+                                <MediaSkeleton />
+                            ) : content?.photos.length ? (
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {content.photos.map((photo) => (
+                                        <a
+                                            key={photo.id}
+                                            href={photo.page_url || photo.image_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/60"
+                                        >
+                                            <img
+                                                src={photo.image_url}
+                                                alt={photo.caption || place.name}
+                                                className="h-40 w-full object-cover transition duration-300 group-hover:scale-105"
+                                                loading="lazy"
+                                            />
+                                            <div className="p-3">
+                                                <p className="line-clamp-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                                    {photo.caption || place.name}
+                                                </p>
+                                                <p className="mt-1 text-[10px] text-slate-500">
+                                                    {photo.creator ? `${photo.creator} · ` : ""}
+                                                    {photo.source}
+                                                </p>
+                                            </div>
+                                        </a>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-slate-500">
+                                    No verified or related photos are available for this place.
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === "videos" && (
+                        <div>
+                            {isLoadingContent ? (
+                                <MediaSkeleton />
+                            ) : content?.videos.length ? (
+                                <div className="space-y-4">
+                                    {content.videos.map((video) => (
+                                        <article
+                                            key={video.id}
+                                            className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 dark:border-slate-800"
+                                        >
+                                            <video
+                                                controls
+                                                preload="metadata"
+                                                poster={video.thumbnail_url || undefined}
+                                                className="aspect-video w-full"
+                                                src={video.video_url}
+                                            >
+                                                Your browser does not support video playback.
+                                            </video>
+                                            <div className="flex items-center justify-between gap-3 bg-white p-3 dark:bg-slate-900">
+                                                <p className="text-xs text-slate-600 dark:text-slate-300">
+                                                    Video by {video.creator || "a Pexels creator"}
+                                                </p>
+                                                {video.page_url && (
+                                                    <a
+                                                        href={video.page_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                                                    >
+                                                        View on Pexels
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-slate-500">
+                                    No related videos are available for this place.
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     {/* TAB: WEATHER */}
-                    {activeTab === 'weather' && (
+                    {activeTab === "weather" && (
                         <div className="space-y-6">
                             {isLoadingWeather ? (
                                 <div className="flex items-center justify-center py-12">
@@ -303,38 +426,35 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                                 Live Meteorological Conditions
                                             </span>
                                             <h3 className="mt-1 text-4xl font-extrabold sm:text-5xl">
-                                                {weather.temperature !==
-                                                undefined
+                                                {weather.temperature !== undefined
                                                     ? `${Math.round(weather.temperature!)}°C`
-                                                    : 'Unavailable'}
+                                                    : "Unavailable"}
                                             </h3>
                                             <p className="mt-1 text-sm font-medium text-blue-100">
                                                 {weather.condition?.label ||
-                                                    'Condition unavailable'}
+                                                    "Condition unavailable"}
                                             </p>
                                         </div>
 
                                         <div className="space-y-1 text-right text-xs text-blue-100">
                                             <p>
-                                                Humidity:{' '}
+                                                Humidity:{" "}
                                                 <strong>
-                                                    {weather.humidity !==
-                                                    undefined
+                                                    {weather.humidity !== undefined
                                                         ? `${weather.humidity}%`
-                                                        : 'Unavailable'}
+                                                        : "Unavailable"}
                                                 </strong>
                                             </p>
                                             <p>
-                                                Wind:{' '}
+                                                Wind:{" "}
                                                 <strong>
-                                                    {weather.wind_speed !==
-                                                    undefined
+                                                    {weather.wind_speed !== undefined
                                                         ? `${weather.wind_speed} km/h`
-                                                        : 'Unavailable'}
+                                                        : "Unavailable"}
                                                 </strong>
                                             </p>
                                             <p>
-                                                Source:{' '}
+                                                Source:{" "}
                                                 <strong className="text-white">
                                                     Open-Meteo REST API
                                                 </strong>
@@ -343,78 +463,66 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                     </div>
 
                                     {/* 5-Day Forecast Grid */}
-                                    {weather.forecasts &&
-                                        weather.forecasts.length > 0 && (
-                                            <div className="mt-6">
-                                                <h4 className="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">
-                                                    5-Day Weather Outlook
-                                                </h4>
-                                                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-                                                    {weather.forecasts.map(
-                                                        (f, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className="flex flex-col items-center rounded-2xl border border-slate-200/80 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-800/60"
-                                                            >
-                                                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                                                    {f.date
-                                                                        .length >
-                                                                    5
-                                                                        ? f.date.slice(
-                                                                              5,
-                                                                          )
-                                                                        : f.date}
-                                                                </span>
-                                                                <span className="my-1 text-lg font-bold text-slate-900 dark:text-white">
-                                                                    {f.max_temp !==
-                                                                    null
-                                                                        ? `${Math.round(f.max_temp)}°`
-                                                                        : '22°'}
-                                                                </span>
-                                                                <span className="line-clamp-1 text-[10px] text-slate-400">
-                                                                    {f.condition
-                                                                        ?.label ||
-                                                                        'Fair'}
-                                                                </span>
-                                                            </div>
-                                                        ),
-                                                    )}
-                                                </div>
+                                    {weather.forecasts && weather.forecasts.length > 0 && (
+                                        <div className="mt-6">
+                                            <h4 className="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">
+                                                5-Day Weather Outlook
+                                            </h4>
+                                            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                                                {weather.forecasts.map((f, i) => (
+                                                    <div
+                                                        key={i}
+                                                        className="flex flex-col items-center rounded-2xl border border-slate-200/80 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-800/60"
+                                                    >
+                                                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                                            {f.date.length > 5
+                                                                ? f.date.slice(5)
+                                                                : f.date}
+                                                        </span>
+                                                        <span className="my-1 text-lg font-bold text-slate-900 dark:text-white">
+                                                            {f.max_temp !== null
+                                                                ? `${Math.round(f.max_temp)}°`
+                                                                : "22°"}
+                                                        </span>
+                                                        <span className="line-clamp-1 text-[10px] text-slate-400">
+                                                            {f.condition?.label || "Fair"}
+                                                        </span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        )}
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <p className="text-xs text-slate-500">
                                     {weatherNotice ??
-                                        'Weather data unavailable for this coordinate.'}
+                                        "Weather data unavailable for this coordinate."}
                                 </p>
                             )}
                         </div>
                     )}
 
                     {/* TAB: HOURS & ACCESS */}
-                    {activeTab === 'hours' && (
+                    {activeTab === "hours" && (
                         <div className="space-y-4">
                             <h4 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
                                 Operating Schedule
                             </h4>
                             {place.hours ? (
                                 <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-slate-50 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-800/60">
-                                    {Object.entries(place.hours).map(
-                                        ([day, hours]) => (
-                                            <div
-                                                key={day}
-                                                className="flex items-center justify-between px-4 py-2.5 text-xs"
-                                            >
-                                                <span className="font-semibold text-slate-800 capitalize dark:text-slate-200">
-                                                    {day}
-                                                </span>
-                                                <span className="font-mono text-slate-600 dark:text-slate-400">
-                                                    {hours}
-                                                </span>
-                                            </div>
-                                        ),
-                                    )}
+                                    {Object.entries(place.hours).map(([day, hours]) => (
+                                        <div
+                                            key={day}
+                                            className="flex items-center justify-between px-4 py-2.5 text-xs"
+                                        >
+                                            <span className="font-semibold text-slate-800 capitalize dark:text-slate-200">
+                                                {day}
+                                            </span>
+                                            <span className="font-mono text-slate-600 dark:text-slate-400">
+                                                {hours}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             ) : (
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
@@ -473,7 +581,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                     )}
 
                     {/* TAB: REVIEWS */}
-                    {activeTab === 'reviews' && (
+                    {activeTab === "reviews" && (
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <h4 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
@@ -481,7 +589,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                 </h4>
                                 {place.rating !== null &&
                                     place.rating !== undefined &&
-                                    place.rating !== '' && (
+                                    place.rating !== "" && (
                                         <span className="text-xs font-semibold text-amber-500">
                                             Average ★ {place.rating} / 5.0
                                         </span>
@@ -498,9 +606,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                             <div className="mb-1.5 flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
                                                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
-                                                        {rev.author_name.charAt(
-                                                            0,
-                                                        )}
+                                                        {rev.author_name.charAt(0)}
                                                     </div>
                                                     <div>
                                                         <p className="text-xs font-bold text-slate-900 dark:text-white">
@@ -508,15 +614,13 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                                         </p>
                                                         {rev.relative_time_description && (
                                                             <p className="text-[10px] text-slate-400">
-                                                                {
-                                                                    rev.relative_time_description
-                                                                }
+                                                                {rev.relative_time_description}
                                                             </p>
                                                         )}
                                                     </div>
                                                 </div>
                                                 <span className="text-xs font-bold text-amber-500">
-                                                    {'★'.repeat(rev.rating)}
+                                                    {"★".repeat(rev.rating)}
                                                 </span>
                                             </div>
                                             <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
@@ -527,8 +631,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                                 </div>
                             ) : (
                                 <p className="text-xs text-slate-500">
-                                    No public reviews logged for this location
-                                    yet.
+                                    No public reviews logged for this location yet.
                                 </p>
                             )}
                         </div>
@@ -538,3 +641,10 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
         </div>
     );
 };
+
+const MediaSkeleton = () => (
+    <div className="grid animate-pulse gap-3 sm:grid-cols-2" aria-label="Loading place media">
+        <div className="h-44 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-44 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+    </div>
+);

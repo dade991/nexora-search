@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\LocationResource;
 use App\Models\Location;
+use App\Services\PlaceContentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PlaceController extends Controller
 {
+    public function __construct(private PlaceContentService $content) {}
+
     /**
      * Display a listing of places.
      */
@@ -55,7 +58,10 @@ class PlaceController extends Controller
             ->firstOrFail();
 
         return response()->json([
-            'data' => new LocationResource($place),
+            'data' => [
+                ...(new LocationResource($place))->resolve(),
+                'content' => $this->content->for($place),
+            ],
         ]);
     }
 

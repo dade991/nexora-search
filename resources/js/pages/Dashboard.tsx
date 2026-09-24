@@ -14,6 +14,7 @@ import { SavedPlacesDrawer } from '@/components/SavedPlacesDrawer';
 import { SearchHistoryDrawer } from '@/components/SearchHistoryDrawer';
 import { AuthModal } from '@/components/AuthModal';
 import { OnboardingModal } from '@/components/OnboardingModal';
+import { MapPlacePanel } from '@/components/MapPlacePanel';
 
 interface DashboardProps {
     initialLocations?: LocationItem[];
@@ -57,7 +58,7 @@ export default function Dashboard({
     // Search & Filter State
     const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
     const [activeCategory, setActiveCategory] = useState('all');
-    const [radiusKm, setRadiusKm] = useState(10);
+    const [radiusKm, setRadiusKm] = useState(50000);
     const [isSearching, setIsSearching] = useState(false);
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [hasSearched, setHasSearched] = useState(false);
@@ -202,7 +203,12 @@ export default function Dashboard({
                 .then((res) => {
                     if (current) setSuggestions(res.suggestions);
                 })
-                .catch(() => {});
+                .catch((error) => {
+                    console.warn('[Nexora Search] Suggestions failed', {
+                        query: searchQuery,
+                        error,
+                    });
+                });
         }, 250);
         return () => {
             current = false;
@@ -263,6 +269,22 @@ export default function Dashboard({
                         : undefined,
             });
             if (sequence !== searchSequence.current) return;
+            if (res.status === 'degraded') {
+                console.error('[Nexora Search] Live provider degraded', {
+                    query: query.trim(),
+                    provider: res.provider,
+                    message: res.message,
+                    resultCount: res.results.length,
+                    filters: {
+                        category:
+                            activeCategory !== 'all'
+                                ? activeCategory
+                                : undefined,
+                        radiusKm,
+                        hasCoordinates: Boolean(center),
+                    },
+                });
+            }
             if (res.results.length > 0 || displayedLocations.length === 0) {
                 setDisplayedLocations(res.results);
                 setResultQuery(query.trim());
@@ -284,6 +306,10 @@ export default function Dashboard({
                 );
         } catch (error) {
             if (sequence !== searchSequence.current) return;
+            console.error('[Nexora Search] Search request failed', {
+                query: query.trim(),
+                error,
+            });
             setSearchError(
                 error instanceof Error
                     ? error.message
@@ -364,8 +390,13 @@ export default function Dashboard({
         }
     };
 
+    const handleMapSelectPlace = (place: LocationItem) => {
+        setSelectedPlace(place);
+        setIsDetailOpen(false);
+    };
+
     // Open Place Details
-    const handleSelectPlace = (place: LocationItem) => {
+    const handleBrowsePlace = (place: LocationItem) => {
         setSelectedPlace(place);
         setIsDetailOpen(true);
     };
@@ -558,7 +589,7 @@ export default function Dashboard({
                             <InteractiveMap
                                 places={baseLocations}
                                 selectedPlace={null}
-                                onSelectPlace={handleSelectPlace}
+                                onSelectPlace={handleMapSelectPlace}
                             />
                         </div>
                     </div>
@@ -603,10 +634,14 @@ export default function Dashboard({
                                     <InteractiveMap
                                         places={displayedLocations}
                                         selectedPlace={selectedPlace}
-                                        onSelectPlace={handleSelectPlace}
+                                        onSelectPlace={handleMapSelectPlace}
                                     />
                                 </div>
                                 <div className="h-full scrollbar-thin space-y-4 overflow-y-auto pr-1 lg:col-span-5">
+                                    <MapPlacePanel
+                                        place={selectedPlace}
+                                        onBrowse={handleBrowsePlace}
+                                    />
                                     {displayedLocations.map((place) => (
                                         <PlaceCard
                                             key={place.id}
@@ -615,7 +650,7 @@ export default function Dashboard({
                                                 (p) => p.id === place.id,
                                             )}
                                             onToggleSave={handleToggleSave}
-                                            onSelect={handleSelectPlace}
+                                            onSelect={handleBrowsePlace}
                                             viewMode="list"
                                         />
                                     ))}
@@ -632,7 +667,7 @@ export default function Dashboard({
                                             (p) => p.id === place.id,
                                         )}
                                         onToggleSave={handleToggleSave}
-                                        onSelect={handleSelectPlace}
+                                        onSelect={handleBrowsePlace}
                                         viewMode="list"
                                     />
                                 ))}
@@ -648,7 +683,7 @@ export default function Dashboard({
                                             (p) => p.id === place.id,
                                         )}
                                         onToggleSave={handleToggleSave}
-                                        onSelect={handleSelectPlace}
+                                        onSelect={handleBrowsePlace}
                                         viewMode="grid"
                                     />
                                 ))}
@@ -920,7 +955,7 @@ export default function Dashboard({
                 isOpen={isSavedDrawerOpen}
                 onClose={() => setIsSavedDrawerOpen(false)}
                 savedPlaces={savedPlaces}
-                onSelectPlace={handleSelectPlace}
+                onSelectPlace={handleBrowsePlace}
                 onRemoveSaved={handleToggleSave}
             />
 

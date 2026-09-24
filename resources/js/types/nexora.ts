@@ -11,6 +11,35 @@ export interface PlaceHours {
     [day: string]: string;
 }
 
+export interface PlaceMediaPhoto {
+    id: string;
+    source: "wikipedia" | "wikimedia" | "pexels";
+    image_url: string;
+    page_url?: string | null;
+    caption?: string | null;
+    creator?: string | null;
+    creator_url?: string | null;
+}
+
+export interface PlaceMediaVideo {
+    id: string;
+    source: "pexels";
+    video_url: string;
+    page_url?: string | null;
+    thumbnail_url?: string | null;
+    duration_seconds?: number | null;
+    creator?: string | null;
+    creator_url?: string | null;
+}
+
+export interface PlaceContent {
+    description?: string | null;
+    article_url?: string | null;
+    photos: PlaceMediaPhoto[];
+    videos: PlaceMediaVideo[];
+    attribution: string[];
+}
+
 export interface LocationItem {
     id: number | string;
     name: string;
@@ -50,7 +79,7 @@ export interface DailyForecast {
 
 export interface WeatherReport {
     source: string;
-    status?: 'live' | 'cached' | 'degraded';
+    status?: "live" | "cached" | "degraded";
     message?: string;
     location?: {
         name?: string;
@@ -112,7 +141,7 @@ export interface ApiRequestLog {
 }
 
 export interface SystemHealth {
-    status: 'healthy' | 'degraded' | 'offline';
+    status: "healthy" | "degraded" | "offline";
     database: string;
     cache: string;
     php_version: string;
@@ -136,7 +165,7 @@ export interface AdminMetricsData {
 
 export interface ChatMessage {
     id: string;
-    role: 'user' | 'assistant' | 'system';
+    role: "user" | "assistant" | "system";
     content: string;
     timestamp: string;
     suggestedPlaces?: LocationItem[];

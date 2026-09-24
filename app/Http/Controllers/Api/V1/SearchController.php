@@ -46,10 +46,10 @@ class SearchController extends Controller
             'longitude' => 'nullable|required_with:latitude|numeric|between:-180,180',
             'limit' => 'nullable|integer|min:1|max:10',
         ]);
-        $suggestions = $this->search->local($data['query'],
+        $suggestions = $this->search->suggestions($data['query'],
             isset($data['latitude']) ? (float) $data['latitude'] : null,
             isset($data['longitude']) ? (float) $data['longitude'] : null,
-            50000, null, $data['limit'] ?? 10);
+            $data['limit'] ?? 10);
 
         return response()->json(['query' => $data['query'], 'suggestions' => $suggestions]);
     }

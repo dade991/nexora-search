@@ -3,6 +3,14 @@ export interface MapCoordinates {
     longitude: number;
 }
 
+export function describeLocationAccuracy(accuracyMetres: number): string {
+    if (accuracyMetres >= 1000) {
+        return `Approximate location (±${(accuracyMetres / 1000).toFixed(1)} km)`;
+    }
+
+    return `Location accuracy ±${Math.round(accuracyMetres)} m`;
+}
+
 export function isMapCenteredOnLocation(
     location: MapCoordinates,
     center: MapCoordinates,
@@ -14,11 +22,8 @@ export function isMapCenteredOnLocation(
     const centerLatitude = (center.latitude * Math.PI) / 180;
     const haversine =
         Math.sin(latitudeDelta / 2) ** 2 +
-        Math.cos(latitude) *
-            Math.cos(centerLatitude) *
-            Math.sin(longitudeDelta / 2) ** 2;
-    const distanceMetres =
-        6_371_000 * 2 * Math.asin(Math.sqrt(Math.min(1, haversine)));
+        Math.cos(latitude) * Math.cos(centerLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+    const distanceMetres = 6_371_000 * 2 * Math.asin(Math.sqrt(Math.min(1, haversine)));
 
     return distanceMetres <= toleranceMetres;
 }

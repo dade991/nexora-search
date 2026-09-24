@@ -11,72 +11,42 @@ use Illuminate\Support\Facades\Http;
 
 class LocationSearchService
 {
-    private const OPENSTREETMAP_CIRCUIT_KEY = 'provider_circuit:openstreetmap';
+    public function __construct(private GeoapifyService $geoapify) {}
 
-    public function __construct(private SearchApiService $searchApi) {}
-
+    /** @return array<string, mixed> */
     public function search(string $query, ?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit): array
     {
-        $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
-        if ($local->isNotEmpty()) {
-            return [
-                'provider' => 'database',
-                'status' => 'cached',
-                'message' => 'Showing saved results immediately while live providers recover.',
-                'results' => $local->values(),
-                'count' => $local->count(),
-            ];
-        }
-
-        $status = 'live';
-        $message = null;
-
-        if (filled(config('services.searchapi.key'))) {
-            try {
-                $provider = 'searchapi_google_maps';
-                $response = $this->searchApi->searchPlaces($query, $latitude, $longitude, $radius, $category, $limit);
-                $status = $response['status'] ?? 'live';
-                $items = $this->mapSearchApiResults($response);
-                if ($items->isEmpty()) {
-                    $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
-                    if ($local->isNotEmpty()) {
-                        return $this->degradedResponse('database', $local);
-                    }
-
-                    $provider = 'openstreetmap';
-                    $status = 'degraded';
-                    $message = 'Google Maps returned no matching places, so Nexora is showing backup results.';
-                    $items = $this->mapOpenStreetMapResults($query, $limit);
-                }
-            } catch (ExternalServiceUnavailableException) {
-                $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
-                if ($local->isNotEmpty()) {
-                    return $this->degradedResponse('database', $local);
-                }
-
-                $stale = $this->searchApi->stalePlaces($query, $latitude, $longitude, $radius, $category, $limit);
-                if ($stale !== null && ! empty($stale['results'])) {
-                    $provider = 'searchapi_google_maps_cache';
-                    $status = 'degraded';
-                    $message = 'Live place search is unavailable, so Nexora is showing recently saved results.';
-                    $items = $this->mapSearchApiResults($stale);
-                } else {
-                    return $this->degradedResponse('unavailable', collect());
-                }
-            }
-        } else {
+        try {
+            $provider = 'geoapify';
+            $status = 'live';
+            $message = null;
+            $items = collect($this->geoapify->search($this->placeQuery($query, $category), $latitude, $longitude, $limit));
+        } catch (ExternalServiceUnavailableException) {
             $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
             if ($local->isNotEmpty()) {
-                return [
-                    'provider' => 'database',
-                    'status' => 'cached',
-                    'message' => 'Showing saved place data.',
-                    'results' => $local->values(),
-                    'count' => $local->count(),
-                ];
+                return $this->degradedResponse('database', $local);
             }
+
             try {
                 $provider = 'openstreetmap';
+                $status = 'degraded';
+                $message = 'Geoapify is unavailable, so Nexora is showing backup OpenStreetMap results.';
+                $items = $this->mapOpenStreetMapResults($query, $limit);
+            } catch (ExternalServiceUnavailableException) {
+                return $this->degradedResponse('unavailable', collect());
+            }
+        }
+
+        if ($items->isEmpty()) {
+            $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
+            if ($local->isNotEmpty()) {
+                return $this->degradedResponse('database', $local);
+            }
+
+            try {
+                $provider = 'openstreetmap';
+                $status = 'degraded';
+                $message = 'No Geoapify matches were found, so Nexora is showing backup OpenStreetMap results.';
                 $items = $this->mapOpenStreetMapResults($query, $limit);
             } catch (ExternalServiceUnavailableException) {
                 return $this->degradedResponse('unavailable', collect());
@@ -108,6 +78,17 @@ class LocationSearchService
         ];
     }
 
+    /** @return Collection<int, array<string, mixed>> */
+    public function suggestions(string $query, ?float $latitude, ?float $longitude, int $limit): Collection
+    {
+        try {
+            return collect($this->geoapify->suggestions($query, $latitude, $longitude, $limit));
+        } catch (ExternalServiceUnavailableException) {
+            return $this->local($query, $latitude, $longitude, 50000, null, $limit);
+        }
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
     public function local(string $query, ?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit): Collection
     {
         $locations = Location::query()->where(function ($builder) use ($query) {
@@ -121,6 +102,10 @@ class LocationSearchService
         return $this->withinRadius($locations->latest()->get()->map->toArray(), $latitude, $longitude, $radius)->take($limit)->values();
     }
 
+    /**
+     * @param  Collection<int, array<string, mixed>>  $places
+     * @return Collection<int, array<string, mixed>>
+     */
     private function withinRadius(Collection $places, ?float $latitude, ?float $longitude, int $radius): Collection
     {
         if ($latitude === null || $longitude === null) {
@@ -137,34 +122,28 @@ class LocationSearchService
         })->filter(fn (array $place): bool => $place['distance_km'] <= $radius / 1000)->sortBy('distance_km');
     }
 
+    /** @return list<array<string, mixed>> */
     private function openStreetMap(string $query, int $limit): array
     {
-        if (Cache::has(self::OPENSTREETMAP_CIRCUIT_KEY)) {
-            throw new ExternalServiceUnavailableException('openstreetmap', 'Backup search is temporarily paused after a connection failure.', 503);
-        }
-
         return Cache::remember('osm_search_v2_'.md5($query.'_'.$limit), 1800, function () use ($query, $limit): array {
             try {
                 $response = Http::withHeaders(['User-Agent' => 'NexoraSearch/1.0', 'Accept-Language' => 'en'])
-                    ->connectTimeout(2)->timeout(2)
+                    ->withOptions(['connect_timeout' => 0, 'timeout' => 0])
                     ->get('https://nominatim.openstreetmap.org/search', [
                         'q' => $query, 'format' => 'json', 'extratags' => 1, 'limit' => $limit,
                     ]);
             } catch (ConnectionException) {
-                Cache::put(self::OPENSTREETMAP_CIRCUIT_KEY, true, now()->addMinute());
                 throw new ExternalServiceUnavailableException('openstreetmap', 'Location search is temporarily unreachable. Please try again.', 503);
             }
             if (! $response->successful() || ! is_array($response->json())) {
-                Cache::put(self::OPENSTREETMAP_CIRCUIT_KEY, true, now()->addMinute());
                 throw new ExternalServiceUnavailableException('openstreetmap', 'Location search is temporarily unavailable.', 503);
             }
-
-            Cache::forget(self::OPENSTREETMAP_CIRCUIT_KEY);
 
             return $response->json();
         });
     }
 
+    /** @return Collection<int, array<string, mixed>> */
     private function mapOpenStreetMapResults(string $query, int $limit): Collection
     {
         return collect($this->openStreetMap($query, $limit))->map(fn (array $place): array => [
@@ -179,19 +158,15 @@ class LocationSearchService
         ]);
     }
 
-    private function mapSearchApiResults(array $response): Collection
+    private function placeQuery(string $query, ?string $category): string
     {
-        return collect($response['results'])->map(fn (array $place): array => [
-            'place_id' => $place['place_id'], 'external_id' => $place['place_id'],
-            'name' => $place['name'], 'address' => $place['formatted_address'],
-            'latitude' => $place['geometry']['location']['lat'], 'longitude' => $place['geometry']['location']['lng'],
-            'category' => $this->category($place['types']),
-            'rating' => $place['rating'], 'review_count' => $place['user_ratings_total'],
-            'phone' => $place['formatted_phone_number'], 'website' => $place['website'],
-            'photos' => $place['photos'],
-        ]);
+        return $category === null ? $query : $query.' '.$category;
     }
 
+    /**
+     * @param  Collection<int, array<string, mixed>>  $results
+     * @return array<string, mixed>
+     */
     private function degradedResponse(string $provider, Collection $results): array
     {
         return [
@@ -203,6 +178,7 @@ class LocationSearchService
         ];
     }
 
+    /** @param list<string> $types */
     private function category(array $types): string
     {
         foreach ($types as $type) {

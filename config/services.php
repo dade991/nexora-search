@@ -50,6 +50,24 @@ return [
         'base_url' => env('SEARCHAPI_BASE_URL', 'https://www.searchapi.io/api/v1'),
     ],
 
+    'geoapify' => [
+        'key' => env('GEOAPIFY_API_KEY'),
+        'base_url' => env('GEOAPIFY_BASE_URL', 'https://api.geoapify.com'),
+    ],
+
+    'pexels' => [
+        'key' => env('PEXELS_API_KEY'),
+        'base_url' => env('PEXELS_BASE_URL', 'https://api.pexels.com'),
+    ],
+
+    'wikipedia' => [
+        'api_url' => env('WIKIPEDIA_API_URL', 'https://en.wikipedia.org/w/api.php'),
+    ],
+
+    'wikimedia' => [
+        'api_url' => env('WIKIMEDIA_API_URL', 'https://commons.wikimedia.org/w/api.php'),
+    ],
+
     'github' => [
         'token' => env('GITHUB_TOKEN'),
     ],

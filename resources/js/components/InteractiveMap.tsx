@@ -9,7 +9,10 @@ import {
     type GoogleRouteSummary,
     type TravelMode,
 } from '@/lib/mapsApi';
-import { isMapCenteredOnLocation } from '@/lib/mapLocation';
+import {
+    describeLocationAccuracy,
+    isMapCenteredOnLocation,
+} from '@/lib/mapLocation';
 import type { LocationItem } from '@/types';
 
 interface InteractiveMapProps {
@@ -20,8 +23,7 @@ interface InteractiveMapProps {
 
 type MapView = 'roadmap' | 'satellite' | 'hybrid' | 'terrain' | '3d';
 
-const mapTypeFor = (view: MapView): string =>
-    view === '3d' ? 'hybrid' : view;
+const mapTypeFor = (view: MapView): string => (view === '3d' ? 'hybrid' : view);
 
 const coordinatesFor = (place?: LocationItem | null): Coordinates | null => {
     const latitude = Number(place?.latitude);
@@ -62,7 +64,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const [travelMode, setTravelMode] = useState<TravelMode>('DRIVING');
     const [route, setRoute] = useState<GoogleRouteSummary | null>(null);
     const [airports, setAirports] = useState<GoogleAirport[]>([]);
-    const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
     const [isCenteredOnUser, setIsCenteredOnUser] = useState(false);
     const [isReady, setIsReady] = useState(false);
     const [isWorking, setIsWorking] = useState(false);
@@ -193,10 +194,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                 marker.append(pin);
                 marker.addEventListener('gmp-click', () => {
                     onSelectPlace(place);
-                    infoWindow.current?.setContent(
-                        popupContent(place.name, place.category ?? 'Place'),
-                    );
-                    infoWindow.current?.open({ map: map.current, anchor: marker });
                 });
                 placeMarkers.current.push(marker);
                 bounds.extend(position);
@@ -225,7 +222,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             return;
         }
 
-        map.current.setMapTypeId(mapTypeFor(view));
+        const requestedMapType = mapTypeFor(view);
+        if (map.current.getMapTypeId() !== requestedMapType) {
+            map.current.setMapTypeId(requestedMapType);
+        }
 
         if (view !== '3d' || !threeDContainer.current) {
             if (threeDMap.current) {
@@ -273,9 +273,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     const locateUser = async (): Promise<Coordinates> => {
         const google = await loadGoogleMaps();
-        const coordinates = userLocation ?? (await getCurrentLocation());
+        const coordinates = await getCurrentLocation();
         userLocationRef.current = coordinates;
-        setUserLocation(coordinates);
         if (locationMarker.current) {
             locationMarker.current.map = null;
         }
@@ -314,6 +313,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             });
             map.current?.setZoom(15);
             setIsCenteredOnUser(true);
+            if (coordinates.accuracy !== undefined) {
+                setMessage(describeLocationAccuracy(coordinates.accuracy));
+            }
         } catch (error) {
             setMessage(
                 error instanceof Error
@@ -405,7 +407,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     infoWindow.current?.setContent(
                         popupContent(airport.name, airport.address),
                     );
-                    infoWindow.current?.open({ map: map.current, anchor: marker });
+                    infoWindow.current?.open({
+                        map: map.current,
+                        anchor: marker,
+                    });
                 });
                 return marker;
             });
@@ -458,22 +463,28 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             )}
 
             <div className="absolute top-4 left-4 z-10 flex max-w-[calc(100%-5rem)] gap-1 rounded-full bg-white/95 p-1 shadow-[0_8px_30px_rgba(16,32,30,0.16)] backdrop-blur dark:bg-[#10201e]/95">
-                {(['roadmap', 'satellite', 'hybrid', 'terrain', '3d'] as MapView[]).map(
-                    (option) => (
-                        <button
-                            key={option}
-                            type="button"
-                            onClick={() => setView(option)}
-                            className={`rounded-full px-3 py-2 text-[11px] font-semibold capitalize transition ${
-                                view === option
-                                    ? 'bg-[#10201e] text-white dark:bg-[#e8c36a] dark:text-[#10201e]'
-                                    : 'text-[#65736f] hover:bg-[#edf2f0] dark:text-[#b7c7c1] dark:hover:bg-white/10'
-                            }`}
-                        >
-                            {option === '3d' ? '3D' : option}
-                        </button>
-                    ),
-                )}
+                {(
+                    [
+                        'roadmap',
+                        'satellite',
+                        'hybrid',
+                        'terrain',
+                        '3d',
+                    ] as MapView[]
+                ).map((option) => (
+                    <button
+                        key={option}
+                        type="button"
+                        onClick={() => setView(option)}
+                        className={`rounded-full px-3 py-2 text-[11px] font-semibold capitalize transition ${
+                            view === option
+                                ? 'bg-[#10201e] text-white dark:bg-[#e8c36a] dark:text-[#10201e]'
+                                : 'text-[#65736f] hover:bg-[#edf2f0] dark:text-[#b7c7c1] dark:hover:bg-white/10'
+                        }`}
+                    >
+                        {option === '3d' ? '3D' : option}
+                    </button>
+                ))}
             </div>
 
             {view !== '3d' && (
@@ -484,7 +495,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                     aria-label="Center map on my location"
                     aria-pressed={isCenteredOnUser}
                     title="Center on my location"
-                    className={`absolute right-4 bottom-28 z-10 grid h-11 w-11 place-items-center rounded-full border shadow-[0_3px_12px_rgba(16,32,30,0.25)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-60 ${
+                    className={`absolute top-20 right-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[0_3px_12px_rgba(16,32,30,0.25)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-60 ${
                         isCenteredOnUser
                             ? 'border-blue-600 bg-blue-600 text-white'
                             : 'border-white/80 bg-white text-blue-600 hover:bg-blue-50 dark:border-white/15 dark:bg-[#10201e] dark:text-blue-400 dark:hover:bg-[#172522]'
@@ -509,7 +520,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                                     Directions
                                 </p>
                                 <p className="mt-1 truncate text-xs text-[#71807b] dark:text-[#a8b9b4]">
-                                    From your location to {destination?.name ?? 'the selected place'}
+                                    From your location to{' '}
+                                    {destination?.name ?? 'the selected place'}
                                 </p>
                             </div>
                             {route && (
@@ -552,7 +564,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                             disabled={isWorking || !destinationCoordinates}
                             className="mt-3 w-full rounded-xl bg-[#087f6b] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
                         >
-                            {isWorking ? 'Finding the best route…' : 'Get directions'}
+                            {isWorking
+                                ? 'Finding the best route…'
+                                : 'Get directions'}
                         </button>
                     </div>
                 )}

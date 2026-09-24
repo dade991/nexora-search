@@ -4,15 +4,11 @@ namespace App\Services;
 
 use App\ExternalServiceUnavailableException;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Throwable;
 
 class SearchApiService
 {
-    private const CIRCUIT_KEY = 'provider_circuit:searchapi';
-
     public function searchPlaces(string $query, ?float $latitude = null, ?float $longitude = null, int $radius = 5000, ?string $category = null, int $limit = 20): array
     {
         $parameters = $this->parameters($query, $latitude, $longitude, $radius, $category, $limit);
@@ -41,10 +37,6 @@ class SearchApiService
 
     private function request(array $parameters): array
     {
-        if (Cache::has(self::CIRCUIT_KEY)) {
-            throw new ExternalServiceUnavailableException('searchapi', 'SearchApi is temporarily paused after a connection failure.', 503);
-        }
-
         $key = config('services.searchapi.key');
         if (blank($key)) {
             throw new ExternalServiceUnavailableException('searchapi', 'SearchApi is not configured.', 503);
@@ -53,16 +45,7 @@ class SearchApiService
         $start = microtime(true);
         try {
             $response = Http::acceptJson()
-                ->connectTimeout(15)
-                ->timeout(30)
-                ->retry(
-                    2,
-                    250,
-                    fn (Throwable $exception): bool => $exception instanceof ConnectionException
-                        || ($exception instanceof RequestException
-                            && ($exception->response->serverError() || $exception->response->status() === 429)),
-                    throw: false,
-                )
+                ->withOptions(['connect_timeout' => 0, 'timeout' => 0])
                 ->get(config('services.searchapi.base_url').'/search', [...$parameters, 'api_key' => $key]);
         } catch (ConnectionException $exception) {
             ApiLoggerService::log(
@@ -76,18 +59,14 @@ class SearchApiService
                 false,
                 $exception->getMessage(),
             );
-            Cache::put(self::CIRCUIT_KEY, true, now()->addSeconds(15));
             throw new ExternalServiceUnavailableException('searchapi', 'SearchApi is temporarily unreachable. Please try again.', 503);
         }
 
         ApiLoggerService::log('searchapi', '/search', 'GET', $parameters, $response->status(), null, microtime(true) - $start, $response->successful());
 
         if (! $response->successful() || ! is_array($response->json())) {
-            Cache::put(self::CIRCUIT_KEY, true, now()->addSeconds(15));
             throw new ExternalServiceUnavailableException('searchapi', 'SearchApi could not complete the places search. Please try again later.', 503);
         }
-
-        Cache::forget(self::CIRCUIT_KEY);
 
         return $response->json();
     }

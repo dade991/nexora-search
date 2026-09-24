@@ -1,7 +1,8 @@
-import SearchController from '@/actions/App/Http/Controllers/Api/V1/SearchController';
-import ProfileController from '@/actions/App/Http/Controllers/Api/V1/ProfileController';
-import type { LocationItem } from '@/types';
-import type { User, UserPreferences } from '@/types/auth';
+import SearchController from "@/actions/App/Http/Controllers/Api/V1/SearchController";
+import ProfileController from "@/actions/App/Http/Controllers/Api/V1/ProfileController";
+import PlaceController from "@/actions/App/Http/Controllers/Api/V1/PlaceController";
+import type { LocationItem, PlaceContent } from "@/types";
+import type { User, UserPreferences } from "@/types/auth";
 
 export interface SearchFilters {
     category?: string;
@@ -11,23 +12,23 @@ export interface SearchFilters {
 }
 
 export const getAuthToken = (): string | null => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('nexora_token');
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("nexora_token");
 };
 
 export const setAuthToken = (token: string | null): void => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     if (token) {
-        localStorage.setItem('nexora_token', token);
+        localStorage.setItem("nexora_token", token);
     } else {
-        localStorage.removeItem('nexora_token');
+        localStorage.removeItem("nexora_token");
     }
 };
 
 export const getStoredUser = (): User | null => {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === "undefined") return null;
     try {
-        const item = localStorage.getItem('nexora_user');
+        const item = localStorage.getItem("nexora_user");
         return item ? JSON.parse(item) : null;
     } catch {
         return null;
@@ -35,27 +36,24 @@ export const getStoredUser = (): User | null => {
 };
 
 export const setStoredUser = (user: User | null): void => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     if (user) {
-        localStorage.setItem('nexora_user', JSON.stringify(user));
+        localStorage.setItem("nexora_user", JSON.stringify(user));
     } else {
-        localStorage.removeItem('nexora_user');
+        localStorage.removeItem("nexora_user");
     }
 };
 
-async function fetchClient<T>(
-    endpoint: string,
-    options: RequestInit = {},
-): Promise<T> {
+async function fetchClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const token = getAuthToken();
     const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
+        "Content-Type": "application/json",
+        Accept: "application/json",
         ...(options.headers as Record<string, string>),
     };
 
     if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+        headers["Authorization"] = `Bearer ${token}`;
     }
 
     let response: Response;
@@ -65,13 +63,14 @@ async function fetchClient<T>(
             headers,
         });
     } catch (error) {
-        if (
-            error instanceof DOMException &&
-            ['AbortError', 'TimeoutError'].includes(error.name)
-        ) {
-            throw new Error(
-                'Nexora could not complete that request. Please try again.',
-            );
+        console.error("[Nexora API] Network request failed", {
+            endpoint,
+            method: options.method ?? "GET",
+            error,
+        });
+
+        if (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name)) {
+            throw new Error("Nexora could not complete that request. Please try again.");
         }
 
         throw error;
@@ -80,8 +79,14 @@ async function fetchClient<T>(
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        const message =
-            data.message || `Request failed with status ${response.status}`;
+        const message = data.message || `Request failed with status ${response.status}`;
+        console.error("[Nexora API] Request returned an error", {
+            endpoint,
+            method: options.method ?? "GET",
+            status: response.status,
+            message,
+            errors: data.errors,
+        });
         const error = new Error(message);
         (error as any).status = response.status;
         (error as any).data = data;
@@ -94,8 +99,8 @@ async function fetchClient<T>(
 export const api = {
     // Auth
     login: (credentials: { email: string; password: string }) =>
-        fetchClient<{ user: any; token: string }>('/api/v1/auth/login', {
-            method: 'POST',
+        fetchClient<{ user: any; token: string }>("/api/v1/auth/login", {
+            method: "POST",
             body: JSON.stringify(credentials),
         }),
 
@@ -105,12 +110,12 @@ export const api = {
         password: string;
         password_confirmation: string;
     }) =>
-        fetchClient<{ user: any; token: string }>('/api/v1/auth/register', {
-            method: 'POST',
+        fetchClient<{ user: any; token: string }>("/api/v1/auth/register", {
+            method: "POST",
             body: JSON.stringify(payload),
         }),
 
-    me: () => fetchClient<any>('/api/v1/auth/me'),
+    me: () => fetchClient<any>("/api/v1/auth/me"),
 
     updateProfile: (payload: {
         name?: string;
@@ -124,13 +129,13 @@ export const api = {
         preferences?: UserPreferences;
     }) =>
         fetchClient<{ user: User }>(ProfileController.update.url(), {
-            method: 'PATCH',
+            method: "PATCH",
             body: JSON.stringify(payload),
         }),
 
     logout: () =>
-        fetchClient<{ message: string }>('/api/v1/auth/logout', {
-            method: 'POST',
+        fetchClient<{ message: string }>("/api/v1/auth/logout", {
+            method: "POST",
         }),
 
     // Search & Places
@@ -140,7 +145,7 @@ export const api = {
             results: LocationItem[];
             count: number;
             provider: string;
-            status: 'live' | 'cached' | 'degraded';
+            status: "live" | "cached" | "degraded";
             message: string | null;
         }>(SearchController.index.url({ query: { query, ...params } })),
 
@@ -151,33 +156,25 @@ export const api = {
 
     places: (params: Record<string, any> = {}) => {
         const qParams = new URLSearchParams(params).toString();
-        return fetchClient<any>(
-            `/api/v1/places${qParams ? `?${qParams}` : ''}`,
-        );
+        return fetchClient<any>(`/api/v1/places${qParams ? `?${qParams}` : ""}`);
     },
 
     placeDetails: (id: string | number) =>
-        fetchClient<{ data: any }>(`/api/v1/places/${id}`),
+        fetchClient<{ data: { content: PlaceContent } }>(PlaceController.show.url(id)),
 
-    nearby: (
-        latitude: number,
-        longitude: number,
-        radius = 10,
-        category?: string,
-    ) => {
+    nearby: (latitude: number, longitude: number, radius = 10, category?: string) => {
         const qParams = new URLSearchParams({
             latitude: String(latitude),
             longitude: String(longitude),
             radius: String(radius),
-            ...(category && category !== 'all' ? { category } : {}),
+            ...(category && category !== "all" ? { category } : {}),
         }).toString();
         return fetchClient<{ center: any; count: number; data: any[] }>(
             `/api/v1/places/nearby?${qParams}`,
         );
     },
 
-    reviews: (placeId: string | number) =>
-        fetchClient<any>(`/api/v1/places/${placeId}/reviews`),
+    reviews: (placeId: string | number) => fetchClient<any>(`/api/v1/places/${placeId}/reviews`),
 
     // Weather
     weatherCurrent: (latitude: number, longitude: number, name?: string) => {
@@ -200,24 +197,21 @@ export const api = {
 
     // AI
     aiSearch: (prompt: string, limit = 10) =>
-        fetchClient<any>('/api/v1/ai/search', {
-            method: 'POST',
+        fetchClient<any>("/api/v1/ai/search", {
+            method: "POST",
             body: JSON.stringify({ prompt, limit }),
         }),
 
-    aiChat: (
-        messages: Array<{ role: string; content: string }>,
-        model?: string,
-    ) =>
-        fetchClient<any>('/api/v1/ai/chat', {
-            method: 'POST',
+    aiChat: (messages: Array<{ role: string; content: string }>, model?: string) =>
+        fetchClient<any>("/api/v1/ai/chat", {
+            method: "POST",
             body: JSON.stringify({ messages, model }),
             signal: AbortSignal.timeout(12000),
         }),
 
     aiSummary: (locationId?: string | number, location?: any) =>
-        fetchClient<any>('/api/v1/ai/summary', {
-            method: 'POST',
+        fetchClient<any>("/api/v1/ai/summary", {
+            method: "POST",
             body: JSON.stringify({
                 ...(locationId ? { location_id: locationId } : {}),
                 ...(location ? { location } : {}),
@@ -225,43 +219,35 @@ export const api = {
         }),
 
     aiVision: (image: string, prompt?: string) =>
-        fetchClient<any>('/api/v1/ai/vision', {
-            method: 'POST',
+        fetchClient<any>("/api/v1/ai/vision", {
+            method: "POST",
             body: JSON.stringify({ image, prompt }),
         }),
 
     // Favorites
-    favorites: () => fetchClient<any>('/api/v1/favorites'),
+    favorites: () => fetchClient<any>("/api/v1/favorites"),
 
-    addFavorite: (
-        locationId: number | string,
-        notes?: string,
-        tags?: string[],
-    ) =>
-        fetchClient<any>('/api/v1/favorites', {
-            method: 'POST',
+    addFavorite: (locationId: number | string, notes?: string, tags?: string[]) =>
+        fetchClient<any>("/api/v1/favorites", {
+            method: "POST",
             body: JSON.stringify({ location_id: locationId, notes, tags }),
         }),
 
     removeFavorite: (id: number | string) =>
-        fetchClient<any>(`/api/v1/favorites/${id}`, { method: 'DELETE' }),
+        fetchClient<any>(`/api/v1/favorites/${id}`, { method: "DELETE" }),
 
     // History
-    history: () => fetchClient<any>('/api/v1/history'),
+    history: () => fetchClient<any>("/api/v1/history"),
 
-    clearHistory: () =>
-        fetchClient<any>('/api/v1/history', { method: 'DELETE' }),
+    clearHistory: () => fetchClient<any>("/api/v1/history", { method: "DELETE" }),
 
     // Admin & Observability
-    adminMetrics: () => fetchClient<any>('/api/v1/admin/metrics'),
+    adminMetrics: () => fetchClient<any>("/api/v1/admin/metrics"),
 
     adminLogs: (params: Record<string, any> = {}) => {
         const qParams = new URLSearchParams(params).toString();
-        return fetchClient<any>(
-            `/api/v1/admin/logs${qParams ? `?${qParams}` : ''}`,
-        );
+        return fetchClient<any>(`/api/v1/admin/logs${qParams ? `?${qParams}` : ""}`);
     },
 
-    clearAdminLogs: () =>
-        fetchClient<any>('/api/v1/admin/logs', { method: 'DELETE' }),
+    clearAdminLogs: () => fetchClient<any>("/api/v1/admin/logs", { method: "DELETE" }),
 };
