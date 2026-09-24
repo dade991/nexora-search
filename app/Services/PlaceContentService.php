@@ -27,22 +27,22 @@ class PlaceContentService
         try {
             $responses = Http::pool(function (Pool $pool) use ($query): array {
                 $requests = [
-                    $pool->as('wikipedia')->acceptJson()->connectTimeout(3)->timeout(8)
+                    $pool->as('wikipedia')->acceptJson()->connectTimeout(0)->timeout(0)
                         ->get(config('services.wikipedia.api_url'), $this->wikipediaParameters($query)),
-                    $pool->as('wikimedia')->acceptJson()->connectTimeout(3)->timeout(8)
+                    $pool->as('wikimedia')->acceptJson()->connectTimeout(0)->timeout(0)
                         ->get(config('services.wikimedia.api_url'), $this->wikimediaParameters($query)),
                 ];
 
                 if (filled(config('services.pexels.key'))) {
                     $requests[] = $pool->as('pexels_photos')->acceptJson()
                         ->withHeader('Authorization', config('services.pexels.key'))
-                        ->connectTimeout(3)->timeout(8)
+                        ->connectTimeout(0)->timeout(0)
                         ->get(config('services.pexels.base_url').'/v1/search', [
                             'query' => $query, 'orientation' => 'landscape', 'per_page' => 6,
                         ]);
                     $requests[] = $pool->as('pexels_videos')->acceptJson()
                         ->withHeader('Authorization', config('services.pexels.key'))
-                        ->connectTimeout(3)->timeout(8)
+                        ->connectTimeout(0)->timeout(0)
                         ->get(config('services.pexels.base_url').'/v1/videos/search', [
                             'query' => $query, 'orientation' => 'landscape', 'per_page' => 4,
                         ]);

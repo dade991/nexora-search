@@ -26,7 +26,7 @@ class WeatherService
             ];
 
             try {
-                $response = Http::timeout(5)->get($url, $params);
+                $response = Http::connectTimeout(0)->timeout(0)->get($url, $params);
                 $duration = microtime(true) - $startTime;
 
                 if ($response->successful()) {
@@ -87,7 +87,7 @@ class WeatherService
             ];
 
             try {
-                $response = Http::timeout(5)->get($url, $params);
+                $response = Http::connectTimeout(0)->timeout(0)->get($url, $params);
                 $duration = microtime(true) - $startTime;
 
                 if ($response->successful()) {
@@ -153,7 +153,7 @@ class WeatherService
             ];
 
             try {
-                $response = Http::timeout(6)->get($url, $params);
+                $response = Http::connectTimeout(0)->timeout(0)->get($url, $params);
                 $duration = microtime(true) - $startTime;
 
                 if ($response->successful()) {

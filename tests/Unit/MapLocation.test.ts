@@ -3,6 +3,7 @@ import test from "node:test";
 import {
     describeLocationAccuracy,
     isMapCenteredOnLocation,
+    shouldAutoLocateMap,
 } from "../../resources/js/lib/mapLocation.ts";
 
 test("treats a camera within eight metres as centered on the user", () => {
@@ -28,4 +29,12 @@ test("treats a camera moved away from the user as not centered", () => {
 test("warns when the browser location is only approximate", () => {
     assert.equal(describeLocationAccuracy(1800), "Approximate location (±1.8 km)");
     assert.equal(describeLocationAccuracy(24), "Location accuracy ±24 m");
+});
+
+test("automatically locates the user only when the map has no destination", () => {
+    assert.equal(shouldAutoLocateMap(null), true);
+    assert.equal(
+        shouldAutoLocateMap({ latitude: 6.5244, longitude: 3.3792 }),
+        false,
+    );
 });

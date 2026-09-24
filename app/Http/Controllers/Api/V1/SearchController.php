@@ -3,13 +3,14 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Services\GeoapifyService;
 use App\Services\LocationSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class SearchController extends Controller
 {
-    public function __construct(private LocationSearchService $search) {}
+    public function __construct(private LocationSearchService $search, private GeoapifyService $geoapify) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -19,7 +20,8 @@ class SearchController extends Controller
             'longitude' => 'nullable|required_if:nearby,true|required_with:latitude|numeric|between:-180,180',
             'radius' => 'nullable|integer|min:1|max:50000',
             'category' => 'nullable|string|in:all,restaurant,cafe,park,museum,hotel,landmark',
-            'limit' => 'nullable|integer|min:1|max:20',
+            'limit' => 'nullable|integer|min:1|max:500',
+            'offset' => 'nullable|integer|min:0|max:10000',
             'nearby' => 'nullable|boolean',
         ]);
         $query = trim($data['query']);
@@ -34,6 +36,7 @@ class SearchController extends Controller
             $category,
             $data['limit'] ?? 20,
             (bool) ($data['nearby'] ?? false),
+            $data['offset'] ?? 0,
         );
         $user = $request->user('sanctum') ?? $request->user();
         if ($user && data_get($user->preferences, 'search.save_history', true) !== false) {
@@ -61,6 +64,17 @@ class SearchController extends Controller
             $data['limit'] ?? 10);
 
         return response()->json(['query' => $data['query'], 'suggestions' => $suggestions]);
+    }
+
+    public function reverse(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+        ]);
+        $place = $this->geoapify->reverse((float) $data['latitude'], (float) $data['longitude']);
+
+        return response()->json(['data' => $place]);
     }
 
     public function history(Request $request): JsonResponse

@@ -59,7 +59,7 @@ class GithubService
         $startedAt = microtime(true);
 
         try {
-            $request = Http::acceptJson()->withHeaders(['User-Agent' => 'Nexora-Search'])->connectTimeout(3)->timeout(8);
+            $request = Http::acceptJson()->withHeaders(['User-Agent' => 'Nexora-Search'])->connectTimeout(0)->timeout(0);
             if (filled($this->token)) {
                 $request = $request->withToken($this->token);
             }

@@ -15,7 +15,7 @@ import { SearchHistoryDrawer } from '@/components/SearchHistoryDrawer';
 import { AuthModal } from '@/components/AuthModal';
 import { OnboardingModal } from '@/components/OnboardingModal';
 import { MapPlacePanel } from '@/components/MapPlacePanel';
-import { getCurrentLocation, reverseGeocodeLocation } from '@/lib/mapsApi';
+import { getCurrentLocation, findGoogleNearbyPlaces } from '@/lib/mapsApi';
 import { describeLocationAccuracy } from '@/lib/mapLocation';
 
 interface DashboardProps {
@@ -70,6 +70,7 @@ export default function Dashboard({
     const [locationNotice, setLocationNotice] = useState<string | null>(null);
     const [resultQuery, setResultQuery] = useState('');
     const [resultProvider, setResultProvider] = useState('');
+    const [nextNearbyOffset, setNextNearbyOffset] = useState<number | null>(null);
     const [searchCoordinates, setSearchCoordinates] = useState<{
         latitude: number;
         longitude: number;
@@ -201,21 +202,18 @@ export default function Dashboard({
         let current = true;
         setSuggestions([]);
         if (searchQuery.trim().length < 2) return;
-        const timer = setTimeout(() => {
-            api.suggestions(searchQuery)
-                .then((res) => {
-                    if (current) setSuggestions(res.suggestions);
-                })
-                .catch((error) => {
-                    console.warn('[Nexora Search] Suggestions failed', {
-                        query: searchQuery,
-                        error,
-                    });
+        api.suggestions(searchQuery)
+            .then((res) => {
+                if (current) setSuggestions(res.suggestions);
+            })
+            .catch((error) => {
+                console.warn('[Nexora Search] Suggestions failed', {
+                    query: searchQuery,
+                    error,
                 });
-        }, 250);
+            });
         return () => {
             current = false;
-            clearTimeout(timer);
         };
     }, [searchQuery]);
 
@@ -223,6 +221,7 @@ export default function Dashboard({
         query: string,
         coordinates = searchCoordinates,
         nearby = false,
+        offset = 0,
     ) => {
         if (!query.trim()) return;
         const sequence = ++searchSequence.current;
@@ -256,6 +255,8 @@ export default function Dashboard({
                         ? Math.min(radiusKm * 1000, 50000)
                         : undefined,
                 nearby: nearby || undefined,
+                limit: nearby ? 100 : 20,
+                offset: nearby ? offset : undefined,
             });
             if (sequence !== searchSequence.current) return;
             if (res.status === 'degraded') {
@@ -274,17 +275,75 @@ export default function Dashboard({
                     },
                 });
             }
-            if (res.results.length > 0 || displayedLocations.length === 0) {
+            if (offset > 0) {
+                setDisplayedLocations((current) => {
+                    const places = new Map(
+                        current.map((place) => [place.place_id ?? place.id, place]),
+                    );
+                    res.results.forEach((place) =>
+                        places.set(place.place_id ?? place.id, place),
+                    );
+                    return Array.from(places.values());
+                });
+            } else {
                 setDisplayedLocations(res.results);
                 setResultQuery(query.trim());
             }
+
+            // Google Places fallback when backend nearby search returns no results
+            if (nearby && offset === 0 && res.results.length === 0 && center) {
+                const radiusMetres = radiusKm < 1000 ? Math.min(radiusKm * 1000, 50000) : 10000;
+                const categoryFilter = activeCategory !== 'all' ? activeCategory : null;
+
+                try {
+                    const googlePlaces = await findGoogleNearbyPlaces(
+                        center,
+                        radiusMetres,
+                        categoryFilter,
+                        20,
+                    );
+
+                    if (sequence !== searchSequence.current) return;
+
+                    if (googlePlaces.length > 0) {
+                        const asLocations: LocationItem[] = googlePlaces.map((place) => ({
+                            id: `google:${place.id}`,
+                            name: place.name,
+                            address: place.address || null,
+                            latitude: place.latitude,
+                            longitude: place.longitude,
+                            place_id: `google:${place.id}`,
+                            external_id: place.id,
+                            external_source: 'google_places',
+                            category: place.category,
+                            phone: place.phone,
+                            website: place.website,
+                            rating: place.rating,
+                            review_count: place.review_count,
+                            photos: [],
+                            reviews: [],
+                        }));
+
+                        setDisplayedLocations(asLocations);
+                        setResultProvider('google_places');
+                        setSearchNotice(
+                            'Showing nearby places from Google Maps.',
+                        );
+                        setNextNearbyOffset(null);
+                        api.history()
+                            .then((history) => setSearchHistory(history.data))
+                            .catch(() => {});
+                        return;
+                    }
+                } catch (googleError) {
+                    console.warn('[Nexora Search] Google Places fallback failed', googleError);
+                }
+            }
+
+            setNextNearbyOffset(res.has_more ? (res.next_offset ?? null) : null);
             setResultProvider(res.provider);
             setSearchNotice(
-                res.status === 'degraded' || res.status === 'cached'
-                    ? res.results.length === 0 && displayedLocations.length > 0
-                        ? `${res.message ?? 'Live search is unavailable.'} Keeping your previous results visible.`
-                        : res.message
-                    : null,
+                res.message ?? null,
             );
             api.history()
                 .then((history) => setSearchHistory(history.data))
@@ -307,6 +366,19 @@ export default function Dashboard({
         } finally {
             if (sequence === searchSequence.current) setIsSearching(false);
         }
+    };
+
+    const handleLoadMoreNearby = () => {
+        if (nextNearbyOffset === null || !searchCoordinates) {
+            return;
+        }
+
+        void runSearch(
+            resultQuery || searchQuery,
+            searchCoordinates,
+            true,
+            nextNearbyOffset,
+        );
     };
 
     useEffect(() => {
@@ -340,9 +412,10 @@ export default function Dashboard({
                 searchQuery.trim() ||
                 (activeCategory === 'all' ? 'places' : activeCategory);
             setSearchQuery(query);
-            const address = await reverseGeocodeLocation(position).catch(
-                () => null,
-            );
+            const reverse = await api
+                .reverseGeocode(position.latitude, position.longitude)
+                .catch(() => null);
+            const address = reverse?.data?.address;
             setLocationNotice(
                 `${address ? `${address}. ` : ''}${describeLocationAccuracy(position.accuracy ?? 0)}.`,
             );
@@ -700,6 +773,20 @@ export default function Dashboard({
                                         viewMode="grid"
                                     />
                                 ))}
+                            </div>
+                        )}
+                        {nextNearbyOffset !== null && (
+                            <div className="mt-8 flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={handleLoadMoreNearby}
+                                    disabled={isSearching}
+                                    className="rounded-full bg-[#087f6b] px-6 py-3 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#066a5a] disabled:cursor-wait disabled:opacity-60"
+                                >
+                                    {isSearching
+                                        ? 'Loading more places…'
+                                        : 'Load more places'}
+                                </button>
                             </div>
                         )}
                     </div>

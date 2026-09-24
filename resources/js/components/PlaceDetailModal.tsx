@@ -28,7 +28,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
     const [copiedAddress, setCopiedAddress] = useState(false);
 
     useEffect(() => {
-        if (!place) return;
+        if (!isOpen || !place) return;
 
         // Reset state
         setWeather(null);
@@ -59,7 +59,7 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
                 setWeatherNotice("Live weather is temporarily unavailable.");
             })
             .finally(() => setIsLoadingWeather(false));
-    }, [place]);
+    }, [isOpen, place]);
 
     if (!isOpen || !place) return null;
 
@@ -74,7 +74,6 @@ export const PlaceDetailModal: React.FC<PlaceDetailModalProps> = ({
         if (place.address) {
             void navigator.clipboard.writeText(place.address);
             setCopiedAddress(true);
-            setTimeout(() => setCopiedAddress(false), 2000);
         }
     };
 

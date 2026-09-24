@@ -44,6 +44,7 @@ Route::prefix('v1')->group(function () {
     // Search Routes
     Route::prefix('search')->group(function () {
         Route::get('/', [SearchController::class, 'index']);
+        Route::get('/reverse', [SearchController::class, 'reverse']);
         Route::get('/suggestions', [SearchController::class, 'suggestions']);
         Route::get('/history', [SearchController::class, 'history'])
             ->middleware('auth:sanctum');

@@ -15,11 +15,14 @@ class NvidiaAiService
 
     protected string $defaultModel;
 
+    protected ?string $fallbackModel;
+
     public function __construct()
     {
         $this->apiKey = config('services.nvidia.key');
         $this->baseUrl = config('services.nvidia.base_url') ?: 'https://integrate.api.nvidia.com/v1';
-        $this->defaultModel = config('ai.model') ?: config('services.nvidia.model') ?: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+        $this->defaultModel = config('ai.model') ?: config('services.nvidia.model') ?: 'nvidia/nemotron-3.5-lightning-30b-a3b';
+        $this->fallbackModel = config('services.nvidia.fallback_model');
     }
 
     /**
@@ -28,54 +31,62 @@ class NvidiaAiService
     public function chat(array $messages, ?string $model = null, ?string $customApiKey = null): array
     {
         $selectedModel = $model ?? $this->defaultModel;
+        $models = [$selectedModel];
+        if ($model === null && filled($this->fallbackModel) && $this->fallbackModel !== $selectedModel) {
+            $models[] = $this->fallbackModel;
+        }
         $activeKey = $this->apiKey;
-        $startTime = microtime(true);
         $endpoint = '/chat/completions';
-        $failureReason = 'NVIDIA NIM could not complete the request.';
 
         if ($activeKey) {
-            try {
-                $response = Http::withHeaders([
-                    'Authorization' => "Bearer {$activeKey}",
-                    'Content-Type' => 'application/json',
-                ])->connectTimeout(3)->timeout(10)
-                    ->post("{$this->baseUrl}{$endpoint}", [
-                        'model' => $selectedModel,
-                        'messages' => $messages,
-                        'temperature' => 0.7,
-                        'max_tokens' => 1024,
-                    ]);
+            foreach ($models as $candidateModel) {
+                $startTime = microtime(true);
+                try {
+                    $response = Http::withHeaders([
+                        'Authorization' => "Bearer {$activeKey}",
+                        'Content-Type' => 'application/json',
+                    ])->connectTimeout(0)->timeout(0)
+                        ->post("{$this->baseUrl}{$endpoint}", [
+                            'model' => $candidateModel,
+                            'messages' => $messages,
+                            'temperature' => 0.7,
+                            'max_tokens' => 1024,
+                        ]);
 
-                $duration = microtime(true) - $startTime;
+                    $duration = microtime(true) - $startTime;
 
-                if ($response->successful()) {
-                    $data = $response->json();
-                    $content = $data['choices'][0]['message']['content'] ?? '';
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        $content = $data['choices'][0]['message']['content'] ?? '';
 
-                    ApiLoggerService::log('nvidia_nim', $endpoint, 'POST', ['model' => $selectedModel], 200, ['preview' => substr($content, 0, 200)], $duration, true);
+                        ApiLoggerService::log('nvidia_nim', $endpoint, 'POST', ['model' => $candidateModel], 200, ['preview' => substr($content, 0, 200)], $duration, true);
 
-                    return [
-                        'provider' => 'nvidia_nim',
-                        'model' => $selectedModel,
-                        'message' => [
-                            'role' => 'assistant',
-                            'content' => $content,
-                        ],
-                        'usage' => $data['usage'] ?? [],
-                    ];
+                        return [
+                            'provider' => 'nvidia_nim',
+                            'model' => $candidateModel,
+                            'message' => [
+                                'role' => 'assistant',
+                                'content' => $content,
+                            ],
+                            'usage' => $data['usage'] ?? [],
+                        ];
+                    }
+
+                    $failureReason = sprintf(
+                        'NVIDIA NIM returned HTTP %d: %s',
+                        $response->status(),
+                        substr($response->body(), 0, 300)
+                    );
+
+                    ApiLoggerService::log('nvidia_nim', $endpoint, 'POST', ['model' => $candidateModel], $response->status(), null, $duration, false, $failureReason);
+                    if ($response->status() !== 429 && ! $response->serverError()) {
+                        break;
+                    }
+                } catch (Throwable $e) {
+                    $duration = microtime(true) - $startTime;
+                    $failureReason = 'NVIDIA NIM request failed: '.substr($e->getMessage(), 0, 300);
+                    ApiLoggerService::log('nvidia_nim', $endpoint, 'POST', ['model' => $candidateModel], 500, null, $duration, false, $failureReason);
                 }
-
-                $failureReason = sprintf(
-                    'NVIDIA NIM returned HTTP %d: %s',
-                    $response->status(),
-                    substr($response->body(), 0, 300)
-                );
-
-                ApiLoggerService::log('nvidia_nim', $endpoint, 'POST', ['model' => $selectedModel], $response->status(), null, $duration, false, $failureReason);
-            } catch (Throwable $e) {
-                $duration = microtime(true) - $startTime;
-                $failureReason = 'NVIDIA NIM request failed: '.substr($e->getMessage(), 0, 300);
-                ApiLoggerService::log('nvidia_nim', $endpoint, 'POST', ['model' => $selectedModel], 500, null, $duration, false, $failureReason);
             }
         }
 
@@ -169,7 +180,7 @@ class NvidiaAiService
                 $response = Http::withHeaders([
                     'Authorization' => "Bearer {$this->apiKey}",
                     'Content-Type' => 'application/json',
-                ])->timeout(20)->post("{$this->baseUrl}{$endpoint}", [
+                ])->connectTimeout(0)->timeout(0)->post("{$this->baseUrl}{$endpoint}", [
                     'model' => $visionModel,
                     'messages' => [
                         [

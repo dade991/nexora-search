@@ -65,7 +65,7 @@ class MapboxService
         $startedAt = microtime(true);
 
         try {
-            $response = Http::acceptJson()->connectTimeout(3)->timeout(8)->get(
+            $response = Http::acceptJson()->connectTimeout(0)->timeout(0)->get(
                 'https://api.mapbox.com'.$endpoint,
                 $parameters + ['access_token' => $this->accessToken],
             );

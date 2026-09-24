@@ -38,7 +38,8 @@ return [
     'nvidia' => [
         'key' => env('NVIDIA_API_KEY'),
         'base_url' => env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
-        'model' => env('NVIDIA_MODEL', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'),
+        'model' => env('NVIDIA_MODEL', 'nvidia/nemotron-3.5-lightning-30b-a3b'),
+        'fallback_model' => env('NVIDIA_FALLBACK_MODEL', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'),
     ],
 
     'mapbox' => [

@@ -14,14 +14,14 @@ class LocationSearchService
     public function __construct(private GeoapifyService $geoapify) {}
 
     /** @return array<string, mixed> */
-    public function search(string $query, ?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit, bool $nearby = false): array
+    public function search(string $query, ?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit, bool $nearby = false, int $offset = 0): array
     {
         try {
             $provider = 'geoapify';
             $status = 'live';
             $message = null;
             $items = collect($nearby
-                ? $this->geoapify->nearby($latitude, $longitude, $radius, $category, $limit)
+                ? $this->geoapify->nearby($latitude, $longitude, $radius, $category, $limit, $offset)
                 : $this->geoapify->search($this->placeQuery($query, $category), $latitude, $longitude, $limit));
         } catch (ExternalServiceUnavailableException) {
             $local = $this->local($query, $latitude, $longitude, $radius, $category, $limit);
@@ -45,6 +45,20 @@ class LocationSearchService
                 return $this->degradedResponse('database', $local);
             }
 
+            if ($nearby) {
+                $radiusKilometres = rtrim(rtrim(number_format($radius / 1000, 1), '0'), '.');
+
+                return [
+                    'provider' => 'geoapify',
+                    'status' => 'live',
+                    'message' => "No mapped places matched within {$radiusKilometres} km. Try a wider radius or another category.",
+                    'results' => collect(),
+                    'count' => 0,
+                    'has_more' => false,
+                    'next_offset' => null,
+                ];
+            }
+
             try {
                 $provider = 'openstreetmap';
                 $status = 'degraded';
@@ -59,7 +73,9 @@ class LocationSearchService
         if ($category !== null) {
             $items = $items->where('category', $category);
         }
-        $items = $this->withinRadius($items, $latitude, $longitude, $radius)->take($limit);
+        $items = $this->withinRadius($items, $latitude, $longitude, $radius);
+        $hasMore = $nearby && $items->count() >= $limit;
+        $items = $items->take($limit);
         $results = $items->map(function (array $place) use ($provider): array {
             $distance = $place['distance_km'] ?? null;
             unset($place['distance_km']);
@@ -77,6 +93,8 @@ class LocationSearchService
             'message' => $message,
             'results' => $results,
             'count' => $results->count(),
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $limit : null,
         ];
     }
 

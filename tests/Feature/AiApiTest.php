@@ -84,7 +84,32 @@ test('falls back locally and hides upstream capacity details from chat users', f
         ->assertJsonPath('message.role', 'assistant')
         ->assertDontSee('ResourceExhausted');
 
-    Http::assertSentCount(1);
+    Http::assertSentCount(2);
+});
+
+test('uses the configured fallback model when the primary NVIDIA model is busy', function () {
+    config()->set('ai.model', 'nvidia/primary-model');
+    config()->set('services.nvidia.fallback_model', 'nvidia/fallback-model');
+    Http::fake([
+        'integrate.api.nvidia.com/v1/chat/completions' => Http::sequence()
+            ->push(['error' => ['message' => 'ResourceExhausted']], 503)
+            ->push([
+                'choices' => [['message' => ['role' => 'assistant', 'content' => 'Fallback response']]],
+            ], 200),
+    ]);
+
+    $this->postJson('/api/v1/ai/chat', [
+        'messages' => [
+            ['role' => 'user', 'content' => 'Recommend quiet parks in Abuja'],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('provider', 'nvidia_nim')
+        ->assertJsonPath('model', 'nvidia/fallback-model')
+        ->assertJsonPath('message.content', 'Fallback response');
+
+    Http::assertSentCount(2);
+    Http::assertSent(fn ($request): bool => $request['model'] === 'nvidia/primary-model');
+    Http::assertSent(fn ($request): bool => $request['model'] === 'nvidia/fallback-model');
 });
 
 test('can generate AI place summary', function () {

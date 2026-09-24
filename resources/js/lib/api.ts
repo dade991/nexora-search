@@ -11,6 +11,8 @@ export interface SearchFilters {
     longitude?: number;
     radius?: number;
     nearby?: boolean;
+    limit?: number;
+    offset?: number;
 }
 
 export const getAuthToken = (): string | null => {
@@ -149,11 +151,20 @@ export const api = {
             provider: string;
             status: "live" | "cached" | "degraded";
             message: string | null;
+            has_more?: boolean;
+            next_offset?: number | null;
         }>(SearchController.index.url({ query: { query, ...params } })),
 
     suggestions: (query: string) =>
         fetchClient<{ query: string; suggestions: LocationItem[] }>(
             SearchController.suggestions.url({ query: { query } }),
+        ),
+
+    reverseGeocode: (latitude: number, longitude: number) =>
+        fetchClient<{ data: LocationItem | null }>(
+            SearchController.reverse.url({
+                query: { latitude, longitude },
+            }),
         ),
 
     places: (params: Record<string, any> = {}) => {
@@ -231,7 +242,6 @@ export const api = {
         fetchClient<any>("/api/v1/ai/chat", {
             method: "POST",
             body: JSON.stringify({ messages, model }),
-            signal: AbortSignal.timeout(12000),
         }),
 
     aiSummary: (locationId?: string | number, location?: any) =>

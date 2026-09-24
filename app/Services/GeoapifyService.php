@@ -13,7 +13,7 @@ use Throwable;
 
 class GeoapifyService
 {
-    private const NEARBY_CATEGORIES = 'accommodation,catering,commercial,entertainment,leisure,tourism';
+    private const NEARBY_CATEGORIES = 'accommodation,catering,commercial,entertainment,leisure,tourism,building';
 
     /** @return array<int, array<string, mixed>> */
     public function search(string $query, ?float $latitude, ?float $longitude, int $limit): array
@@ -49,8 +49,22 @@ class GeoapifyService
         return $this->places('/v1/geocode/autocomplete', $parameters, 'geoapify_suggestions_v1_');
     }
 
+    /** @return array<string, mixed>|null */
+    public function reverse(float $latitude, float $longitude): ?array
+    {
+        $results = $this->places('/v1/geocode/reverse', [
+            'lat' => $latitude,
+            'lon' => $longitude,
+            'format' => 'json',
+            'limit' => 1,
+            'apiKey' => $this->key(),
+        ], 'geoapify_reverse_v1_');
+
+        return $results[0] ?? null;
+    }
+
     /** @return array<int, array<string, mixed>> */
-    public function nearby(?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit): array
+    public function nearby(?float $latitude, ?float $longitude, int $radius, ?string $category, int $limit, int $offset = 0): array
     {
         if ($latitude === null || $longitude === null) {
             return [];
@@ -60,7 +74,8 @@ class GeoapifyService
             'categories' => $this->nearbyCategories($category),
             'filter' => "circle:{$longitude},{$latitude},{$radius}",
             'bias' => "proximity:{$longitude},{$latitude}",
-            'limit' => min($limit, 20),
+            'limit' => min($limit, 500),
+            'offset' => $offset,
             'apiKey' => $this->key(),
         ];
 
@@ -80,8 +95,8 @@ class GeoapifyService
 
             try {
                 $response = Http::acceptJson()
-                    ->connectTimeout(5)
-                    ->timeout(12)
+                    ->connectTimeout(0)
+                    ->timeout(0)
                     ->retry(
                         [200, 500],
                         0,

@@ -3,6 +3,12 @@ export interface MapCoordinates {
     longitude: number;
 }
 
+export function shouldAutoLocateMap(
+    destination: MapCoordinates | null,
+): boolean {
+    return destination === null;
+}
+
 export function describeLocationAccuracy(accuracyMetres: number): string {
     if (accuracyMetres >= 1000) {
         return `Approximate location (±${(accuracyMetres / 1000).toFixed(1)} km)`;

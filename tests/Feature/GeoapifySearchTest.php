@@ -103,13 +103,65 @@ it('returns nearby venues from Geoapify Places for an explicit near me search', 
         ->assertJsonPath('results.0.name', 'Garden Restaurant')
         ->assertJsonPath('results.0.category', 'restaurant');
     $this->assertDatabaseHas('locations', ['place_id' => 'nearby-restaurant', 'external_source' => 'geoapify']);
-    Http::assertSent(fn ($request): bool => $request->url() === 'https://api.geoapify.com/v2/places?categories=accommodation%2Ccatering%2Ccommercial%2Centertainment%2Cleisure%2Ctourism&filter=circle%3A7.905186%2C8.842049%2C10000&bias=proximity%3A7.905186%2C8.842049&limit=20&apiKey=geoapify-test-key');
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://api.geoapify.com/v2/places?categories=accommodation%2Ccatering%2Ccommercial%2Centertainment%2Cleisure%2Ctourism%2Cbuilding&filter=circle%3A7.905186%2C8.842049%2C10000&bias=proximity%3A7.905186%2C8.842049&limit=20&offset=0&apiKey=geoapify-test-key');
+});
+
+it('returns a Geoapify address for coordinates without using Google geocoding', function () {
+    Http::fake([
+        'api.geoapify.com/v1/geocode/reverse*' => Http::response(['results' => [[
+            'place_id' => 'reverse-place',
+            'name' => 'Nasarawa State University',
+            'formatted' => 'Keffi, Nasarawa, Nigeria',
+            'lat' => 8.848,
+            'lon' => 7.873,
+            'category' => 'education.university',
+            'datasource' => ['raw' => []],
+        ]]]),
+    ]);
+
+    $this->getJson('/api/v1/search/reverse?latitude=8.848&longitude=7.873')
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Nasarawa State University')
+        ->assertJsonPath('data.address', 'Keffi, Nasarawa, Nigeria')
+        ->assertJsonPath('data.latitude', 8.848)
+        ->assertJsonPath('data.longitude', 7.873);
+    Http::assertSent(fn ($request): bool => str_starts_with($request->url(), 'https://api.geoapify.com/v1/geocode/reverse?'));
+});
+
+it('returns pagination metadata for nearby place pages', function () {
+    Http::fake([
+        'api.geoapify.com/v2/places*' => Http::response(['features' => [
+            ['properties' => ['place_id' => 'page-place-1', 'name' => 'First Place', 'formatted' => 'Keffi', 'lat' => 8.84, 'lon' => 7.90, 'categories' => ['building'], 'datasource' => ['raw' => []]]],
+            ['properties' => ['place_id' => 'page-place-2', 'name' => 'Second Place', 'formatted' => 'Keffi', 'lat' => 8.85, 'lon' => 7.91, 'categories' => ['building'], 'datasource' => ['raw' => []]]],
+        ]]),
+    ]);
+
+    $this->getJson('/api/v1/search?query=places&nearby=1&latitude=8.842049&longitude=7.905186&radius=10000&limit=2&offset=2')
+        ->assertOk()
+        ->assertJsonPath('count', 2)
+        ->assertJsonPath('has_more', true)
+        ->assertJsonPath('next_offset', 4);
+    Http::assertSent(fn ($request): bool => $request['limit'] === 2 && $request['offset'] === 2);
 });
 
 it('requires coordinates for an explicit near me search', function () {
     $this->getJson('/api/v1/search?query=places&nearby=1')
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['latitude', 'longitude']);
+});
+
+it('suggests a wider radius when a nearby category has no matches', function () {
+    Http::fake([
+        'api.geoapify.com/v2/places*' => Http::response(['features' => []]),
+    ]);
+
+    $this->getJson('/api/v1/search?query=museum&category=museum&nearby=1&latitude=8.842049&longitude=7.905186&radius=5000')
+        ->assertOk()
+        ->assertJsonPath('provider', 'geoapify')
+        ->assertJsonPath('status', 'live')
+        ->assertJsonPath('count', 0)
+        ->assertJsonPath('message', 'No mapped places matched within 5 km. Try a wider radius or another category.');
+    Http::assertSentCount(1);
 });
 
 it('updates an existing map selection instead of rejecting its place identifier', function () {

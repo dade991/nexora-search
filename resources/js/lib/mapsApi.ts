@@ -20,10 +20,60 @@ export interface GoogleAirport {
     googleMapsUri?: string;
 }
 
+export interface GoogleNearbyPlace {
+    id: string;
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    category: string;
+    rating: number | null;
+    review_count: number;
+    phone: string | null;
+    website: string | null;
+    googleMapsUri?: string;
+}
+
 type GoogleMapsWindow = Window & {
     google?: any;
     __nexoraGoogleMapsReady?: () => void;
 };
+
+const GOOGLE_CATEGORY_TYPES: Record<string, string[]> = {
+    restaurant: ["restaurant", "meal_delivery", "meal_takeaway", "fast_food_restaurant"],
+    cafe: ["cafe", "coffee_shop", "bakery"],
+    park: ["park", "national_park", "garden"],
+    hotel: ["hotel", "lodging", "guest_house", "motel"],
+    museum: ["museum", "art_gallery"],
+    landmark: [
+        "tourist_attraction",
+        "church",
+        "mosque",
+        "hindu_temple",
+        "library",
+        "university",
+        "school",
+        "shopping_mall",
+        "supermarket",
+        "bank",
+        "hospital",
+        "pharmacy",
+        "gas_station",
+        "stadium",
+        "gym",
+    ],
+};
+
+function googleTypeToCategory(types: string[]): string {
+    for (const type of types) {
+        for (const [category, googleTypes] of Object.entries(GOOGLE_CATEGORY_TYPES)) {
+            if (googleTypes.includes(type)) {
+                return category;
+            }
+        }
+    }
+    return "landmark";
+}
 
 let googleMapsPromise: Promise<any> | null = null;
 
@@ -92,25 +142,12 @@ export function getCurrentLocation(): Promise<Coordinates> {
                 const message =
                     error.code === error.PERMISSION_DENIED
                         ? "Allow location access in your browser, then try again."
-                        : error.code === error.TIMEOUT
-                          ? "Getting a fresh location took too long. Try again near a window or enable device location services."
-                          : "Your device could not provide a location. Check Windows location services and try again.";
+                        : "Your device could not provide a location. Check Windows location services and try again.";
                 reject(new Error(message));
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+            { enableHighAccuracy: true, maximumAge: 0 },
         );
     });
-}
-
-export async function reverseGeocodeLocation(coordinates: Coordinates): Promise<string | null> {
-    const google = await loadGoogleMaps();
-    const { Geocoder } = await google.maps.importLibrary("geocoding");
-    const geocoder = new Geocoder();
-    const response = await geocoder.geocode({
-        location: { lat: coordinates.latitude, lng: coordinates.longitude },
-    });
-
-    return response.results?.[0]?.formatted_address ?? null;
 }
 
 export async function computeGoogleRoute(
@@ -184,6 +221,82 @@ export async function findGoogleAirports(center: Coordinates): Promise<GoogleAir
                             ? place.location.lng()
                             : place.location.lng,
                 },
+                googleMapsUri: place.googleMapsURI,
+            },
+        ];
+    });
+}
+
+export async function findGoogleNearbyPlaces(
+    center: Coordinates,
+    radiusMetres = 10000,
+    category?: string | null,
+    maxResults = 20,
+): Promise<GoogleNearbyPlace[]> {
+    const google = await loadGoogleMaps();
+    const { Place, SearchNearbyRankPreference } = await google.maps.importLibrary("places");
+
+    const typesForCategory = (cat: string | null | undefined): string[] => {
+        if (cat && GOOGLE_CATEGORY_TYPES[cat]) {
+            return GOOGLE_CATEGORY_TYPES[cat];
+        }
+        return Object.values(GOOGLE_CATEGORY_TYPES).flat();
+    };
+
+    const includedTypes = typesForCategory(category);
+    const clampedRadius = Math.max(200, Math.min(radiusMetres, 50000));
+    const clampedCount = Math.min(maxResults, 20);
+
+    const { places } = await Place.searchNearby({
+        fields: [
+            "id",
+            "displayName",
+            "location",
+            "formattedAddress",
+            "googleMapsURI",
+            "types",
+            "rating",
+            "userRatingCount",
+            "nationalPhoneNumber",
+            "websiteURI",
+        ],
+        locationRestriction: {
+            center: { lat: center.latitude, lng: center.longitude },
+            radius: clampedRadius,
+        },
+        includedPrimaryTypes: includedTypes.slice(0, 50),
+        maxResultCount: clampedCount,
+        rankPreference: SearchNearbyRankPreference.DISTANCE,
+    });
+
+    return (places ?? []).flatMap((place: any) => {
+        if (!place.location) {
+            return [];
+        }
+
+        const lat =
+            typeof place.location.lat === "function"
+                ? place.location.lat()
+                : place.location.lat;
+        const lng =
+            typeof place.location.lng === "function"
+                ? place.location.lng()
+                : place.location.lng;
+
+        const types: string[] = Array.isArray(place.types) ? place.types : [];
+
+        return [
+            {
+                id: place.id ?? `google_${lat}_${lng}`,
+                name: place.displayName ?? "Unnamed place",
+                address: place.formattedAddress ?? "",
+                latitude: lat,
+                longitude: lng,
+                category: googleTypeToCategory(types),
+                rating: place.rating ?? null,
+                review_count: place.userRatingCount ?? 0,
+                phone: place.nationalPhoneNumber ?? null,
+                website: place.websiteURI ?? null,
                 googleMapsUri: place.googleMapsURI,
             },
         ];
