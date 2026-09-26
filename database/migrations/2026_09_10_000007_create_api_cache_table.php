@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('external_service'); // e.g., 'google_places', 'mapbox', 'weather'
             $table->string('endpoint'); // The specific endpoint called
-            $table->json('parameters')->nullable(); // Request parameters used for caching
+            $table->jsonb('parameters')->nullable(); // Request parameters used for caching
             $table->json('response_data'); // Cached response data
             $table->integer('response_code'); // HTTP response code
             $table->timestamp('expires_at'); // When cache expires
